@@ -5512,14 +5512,19 @@ async function fillStockInfo(symbolInput, nameInput) {
 }
 
 async function refreshQuotes() {
-  const symbols = allKnownSymbols();
+  const symbols = [...new Set(
+    calculatePortfolio().positions
+      .filter((position) => Number(position.quantity) > 0)
+      .map((position) => normalizeSymbol(position.symbol))
+      .filter(Boolean),
+  )];
 
   if (!symbols.length) {
-    els.quoteStatus.textContent = "暂无持仓可更新";
+    els.quoteStatus.textContent = "暂无当前持仓可更新";
     return;
   }
 
-  els.quoteStatus.textContent = `正在更新 ${symbols.length} 只股票...`;
+  els.quoteStatus.textContent = `正在更新 ${symbols.length} 只持仓股票...`;
   let success = 0;
   for (const symbol of symbols) {
     try {
@@ -5535,7 +5540,7 @@ async function refreshQuotes() {
   save();
   renderAll();
   const time = beijingNow().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
-  els.quoteStatus.textContent = success ? `已更新 ${success}/${symbols.length}，${time}` : "股价更新失败，可手动输入";
+  els.quoteStatus.textContent = success ? `已更新 ${success}/${symbols.length} 只持仓股票，${time}` : "持仓股价更新失败，可手动输入";
 }
 
 function initialPositionCost() {
