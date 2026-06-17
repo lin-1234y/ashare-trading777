@@ -694,7 +694,7 @@ body.modal-open {
 
 .pnl-calendar {
   display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
+  grid-template-columns: minmax(28px, 0.55fr) repeat(5, minmax(42px, 1fr)) minmax(28px, 0.55fr);
   gap: 8px;
 }
 
@@ -743,7 +743,9 @@ body.modal-open {
 
 .pnl-day span {
   font-weight: 800;
-  overflow-wrap: anywhere;
+  white-space: nowrap;
+  overflow-wrap: normal;
+  font-variant-numeric: tabular-nums;
 }
 
 .calendar-amount {
@@ -759,7 +761,9 @@ body.modal-open {
 
 .calendar-amount b {
   font-size: 13px;
-  overflow-wrap: anywhere;
+  white-space: nowrap;
+  overflow-wrap: normal;
+  font-variant-numeric: tabular-nums;
 }
 
 .calendar-total {
@@ -1656,7 +1660,7 @@ td {
   }
 
   .pnl-calendar {
-    grid-template-columns: repeat(7, minmax(0, 1fr));
+    grid-template-columns: minmax(24px, 0.45fr) repeat(5, minmax(44px, 1fr)) minmax(24px, 0.45fr);
     gap: 5px;
   }
 
@@ -2440,7 +2444,7 @@ label.wide {
 }
 
 .pnl-calendar {
-  grid-template-columns: repeat(7, minmax(0, 1fr));
+  grid-template-columns: minmax(24px, 0.45fr) repeat(5, minmax(44px, 1fr)) minmax(24px, 0.45fr);
   gap: 6px;
 }
 
@@ -4098,6 +4102,7 @@ body {
     <script>
 const STORAGE_KEY = "ashare-trading-journal";
 const BACKUP_META_KEY = "ashare-trading-journal-backup-meta";
+const RECORD_RENDER_LIMIT = 300;
 
 const defaultSettings = {
   initialCash: 0,
@@ -5743,7 +5748,7 @@ async function refreshQuotes() {
   }
 
   save();
-  renderAll();
+  renderAfterQuoteUpdate();
   const time = beijingNow().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
   els.quoteStatus.textContent = success ? `已更新 ${success}/${symbols.length} 只持仓股票，${time}` : "持仓股价更新失败，可手动输入";
 }
@@ -5916,6 +5921,18 @@ function setView(viewId) {
   els.views.forEach((view) => view.classList.toggle("active", view.id === viewId));
   els.navButtons.forEach((button) => button.classList.toggle("active", button.dataset.view === viewId));
   els.pageTitle.textContent = titles[viewId] || "总览";
+  applyMobileNumericKeyboards();
+}
+
+function applyMobileNumericKeyboards(root = document) {
+  root.querySelectorAll('input[type="number"]').forEach((input) => {
+    const id = input.id || "";
+    const step = input.getAttribute("step") || "";
+    const isIntegerInput = /quantity|batch|year/i.test(id) || step === "1";
+    input.setAttribute("inputmode", isIntegerInput ? "numeric" : "decimal");
+    input.setAttribute("enterkeyhint", "done");
+    if (isIntegerInput) input.setAttribute("pattern", "[0-9]*");
+  });
 }
 
 function classByValue(value) {
@@ -6201,6 +6218,10 @@ function openStockDetail(symbol) {
 function renderRecords() {
   const keyword = els.recordFilter.value.trim().toLowerCase();
   const records = buildFlowRecords().filter((row) => `${row.symbol} ${row.name} ${row.type} ${row.note}`.toLowerCase().includes(keyword));
+  const visibleRecords = keyword ? records : records.slice(0, RECORD_RENDER_LIMIT);
+  const limitNote = !keyword && records.length > visibleRecords.length
+    ? `已显示最近 ${visibleRecords.length} 条，共 ${records.length} 条；查旧记录可用上方搜索。`
+    : "";
 
   if (!records.length) {
     els.recordsBody.innerHTML = `<tr><td colspan="12" class="empty-state">还没有流水记录</td></tr>`;
@@ -6208,7 +6229,7 @@ function renderRecords() {
     return;
   }
 
-  els.recordsBody.innerHTML = records
+  els.recordsBody.innerHTML = visibleRecords
     .map((row) => {
       const actionButtons =
         row.kind === "trade"
@@ -6243,9 +6264,9 @@ function renderRecords() {
         </tr>
       `;
     })
-    .join("");
+    .join("") + (limitNote ? `<tr><td colspan="12" class="history-note">${limitNote}</td></tr>` : "");
 
-  els.recordsCards.innerHTML = records
+  els.recordsCards.innerHTML = visibleRecords
     .map((row) => {
       const actionButtons =
         row.kind === "trade"
@@ -6280,7 +6301,7 @@ function renderRecords() {
         </article>
       `;
     })
-    .join("");
+    .join("") + (limitNote ? `<p class="history-note">${limitNote}</p>` : "");
 }
 
 function closedPositionRows(positions = calculatePortfolio().positions) {
@@ -7036,7 +7057,7 @@ async function autoFillHistoricalCloseBatch(options = {}) {
 
   state.closeSnapshots.sort((a, b) => b.date.localeCompare(a.date));
   save();
-  renderAll();
+  renderAfterCloseSnapshotChange();
   const remaining = missingCloseSnapshotDates().filter((date) => dateInRange(date, els.closeSnapshotStartDate.value, els.closeSnapshotEndDate.value)).length;
   return { added, failed, failedNotes, remaining, total: allDates.length };
 }
@@ -7107,9 +7128,7 @@ function saveCloseSnapshot() {
   state.closeSnapshots.sort((a, b) => b.date.localeCompare(a.date));
   save();
   els.closeSnapshotStatus.textContent = `已记录 ${date} 收盘，总资产 ${money(snapshot.assets)}。`;
-  renderCloseSnapshots();
-  renderDashboard();
-  renderEquityCurve();
+  renderAfterCloseSnapshotChange(snapshot);
 }
 
 function deleteCloseSnapshot(id) {
@@ -7117,9 +7136,7 @@ function deleteCloseSnapshot(id) {
   if (!snapshot || !confirm(`确定删除 ${snapshot.date} 的收盘记录吗？`)) return;
   state.closeSnapshots = state.closeSnapshots.filter((item) => item.id !== id);
   save();
-  renderCloseSnapshots();
-  renderDashboard();
-  renderEquityCurve();
+  renderAfterCloseSnapshotChange();
 }
 
 function deleteSelectedCloseSnapshot() {
@@ -7165,7 +7182,7 @@ function addCashTransfer() {
   state.cashTransfers.sort((a, b) => b.date.localeCompare(a.date));
   resetCashTransferForm();
   save();
-  renderAll();
+  renderAfterCashTransferSave();
 }
 
 function editCashTransfer(id) {
@@ -7185,7 +7202,7 @@ function deleteCashTransfer(id) {
   if (!item || !confirm(`确定删除 ${item.date} 的${item.type === "out" ? "转出" : "转入"}记录吗？`)) return;
   state.cashTransfers = state.cashTransfers.filter((row) => row.id !== id);
   save();
-  renderAll();
+  renderAfterCashTransferSave();
 }
 
 function renderCashTransfers() {
@@ -7310,9 +7327,7 @@ function saveManualCloseSnapshot() {
   save();
   closeModal(document.getElementById("manual-close-modal"));
   els.closeSnapshotStatus.textContent = `已手动补录 ${date} 收盘，总资产 ${money(snapshot.assets)}。`;
-  renderCloseSnapshots();
-  renderDashboard();
-  renderEquityCurve();
+  renderAfterCloseSnapshotChange(snapshot);
 }
 
 function renderCloseSnapshotPositions(snapshot) {
@@ -7403,7 +7418,7 @@ function renderCloseSnapshotDateButton(row) {
   `;
 }
 
-function renderCloseSnapshots() {
+function renderCloseSnapshots(pendingOverride = null) {
   if (!els.closeSnapshotDate.value) els.closeSnapshotDate.value = today();
   if (!els.autoCloseSource.value) els.autoCloseSource.value = state.settings.autoCloseSource || "auto";
   if (!els.autoCloseBatchSize.value) els.autoCloseBatchSize.value = state.settings.autoCloseBatchSize || 5;
@@ -7412,7 +7427,8 @@ function renderCloseSnapshots() {
   renderAutoCloseSummary();
   const sorted = [...state.closeSnapshots].sort((a, b) => b.date.localeCompare(a.date));
   const latest = sorted[0];
-  const pending = buildCloseSnapshot(els.closeSnapshotDate.value || today());
+  const pendingDate = els.closeSnapshotDate.value || today();
+  const pending = pendingOverride && pendingOverride.date === pendingDate ? pendingOverride : buildCloseSnapshot(pendingDate);
   const cards = latest
     ? [
         { label: "最新记录日期", value: latest.date, tone: "" },
@@ -8505,24 +8521,72 @@ function renderAll() {
       console.error("Render failed:", error);
     }
   }
+  applyMobileNumericKeyboards();
 }
 
-function renderAfterTradeSave() {
-  renderRecords();
-  const refreshVisibleTotals = () => {
+let idleRenderHandle = null;
+function scheduleIdleRender(callback, timeout = 1200) {
+  if (idleRenderHandle !== null) {
+    if ("cancelIdleCallback" in window) window.cancelIdleCallback(idleRenderHandle);
+    else window.clearTimeout(idleRenderHandle);
+  }
+
+  const run = () => {
+    idleRenderHandle = null;
     try {
-      renderDashboard();
-      renderPositions();
+      callback();
     } catch (error) {
-      console.error("Deferred trade render failed:", error);
+      console.error("Idle render failed:", error);
     }
   };
 
   if ("requestIdleCallback" in window) {
-    window.requestIdleCallback(refreshVisibleTotals, { timeout: 1200 });
+    idleRenderHandle = window.requestIdleCallback(run, { timeout });
   } else {
-    window.setTimeout(refreshVisibleTotals, 250);
+    idleRenderHandle = window.setTimeout(run, Math.min(300, timeout));
   }
+}
+
+function renderAfterTradeSave() {
+  renderRecords();
+  applyMobileNumericKeyboards();
+  scheduleIdleRender(() => {
+    renderDashboard();
+    renderPositions();
+    applyMobileNumericKeyboards();
+  });
+}
+
+function renderAfterCashTransferSave() {
+  renderCashTransfers();
+  renderRecords();
+  applyMobileNumericKeyboards();
+  scheduleIdleRender(() => {
+    renderDashboard();
+    renderPositions();
+    renderPerformanceSummary();
+    applyMobileNumericKeyboards();
+  });
+}
+
+function renderAfterQuoteUpdate() {
+  renderPositions();
+  applyMobileNumericKeyboards();
+  scheduleIdleRender(() => {
+    renderDashboard();
+    renderPerformanceSummary();
+    applyMobileNumericKeyboards();
+  });
+}
+
+function renderAfterCloseSnapshotChange(snapshot = null) {
+  renderCloseSnapshots(snapshot);
+  applyMobileNumericKeyboards();
+  scheduleIdleRender(() => {
+    renderDashboard();
+    renderEquityCurve();
+    applyMobileNumericKeyboards();
+  });
 }
 
 function editTrade(id) {
@@ -9663,6 +9727,18 @@ els.navButtons.forEach((button) => {
 
 document.querySelectorAll("[data-jump]").forEach((button) => {
   button.addEventListener("click", () => setView(button.dataset.jump));
+});
+
+document.addEventListener("pointerdown", (event) => {
+  if (event.target instanceof HTMLInputElement && event.target.type === "number") {
+    applyMobileNumericKeyboards(event.target.parentElement || document);
+  }
+}, true);
+
+document.addEventListener("focusin", (event) => {
+  if (event.target instanceof HTMLInputElement && event.target.type === "number") {
+    applyMobileNumericKeyboards(event.target.parentElement || document);
+  }
 });
 
 function openModal(id) {
