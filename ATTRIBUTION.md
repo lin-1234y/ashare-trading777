@@ -2,12 +2,9 @@
 
 ## Tiger app icon
 
-The app icon is derived from an Unsplash tiger portrait downloaded from:
+The app icon is based on a tiger-head image supplied by the project owner and resized into:
 
-https://unsplash.com/photos/TYXm0J5tDzw
+- `icon-512.png`
+- `apple-touch-icon.png`
 
-The source photograph was cropped, color-adjusted, sharpened, and framed for use as an app icon.
-
-Unsplash photos may be used for free under the Unsplash License. See:
-
-https://unsplash.com/license
+The source image was provided for use in this project.
