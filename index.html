@@ -2835,8 +2835,8 @@ body {
 
         <div class="sidebar-card">
           <span>核算规则</span>
-          <strong>最近原则匹配</strong>
-          <p>费用按设置自动计算，原来持仓不参与匹配盈亏。</p>
+          <strong>盈利优先匹配</strong>
+          <p>费用按设置自动计算，只把盈利的反向交易计入主匹配盈亏。</p>
         </div>
       </aside>
 
@@ -3055,7 +3055,7 @@ body {
             <div class="modal-head">
               <div>
                 <h3>总匹配盈亏阶段查询</h3>
-                <span>按匹配发生日期统计阶段总匹配盈亏与对应个股匹配盈亏</span>
+                <span>按盈利优先匹配发生日期统计阶段总匹配盈亏与对应个股匹配盈亏</span>
               </div>
               <button class="icon-action" type="button" data-modal-close>关闭</button>
             </div>
@@ -3090,7 +3090,7 @@ body {
             <div class="modal-head">
               <div>
                 <h3>各股匹配盈亏</h3>
-                <span>原来持仓不参与匹配，先卖后买显示负的未匹配数量</span>
+                <span>保留原规则对照，并新增盈利优先匹配明细</span>
               </div>
               <button class="icon-action" type="button" data-modal-close>关闭</button>
             </div>
@@ -3114,8 +3114,12 @@ body {
                 <thead>
                   <tr>
                     <th>股票名称</th>
+                    <th>原已匹配</th>
                     <th>未匹配数量</th>
                     <th>匹配实现盈亏</th>
+                    <th>盈利优先已匹配</th>
+                    <th>盈利优先未匹配</th>
+                    <th>盈利优先盈利</th>
                   </tr>
                 </thead>
                 <tbody id="trade-pair-pnl-body"></tbody>
@@ -5159,7 +5163,7 @@ function calculateRangeSummary(startDate = "", endDate = "") {
   const buyAmount = trades.filter((trade) => trade.side === "buy").reduce((sum, trade) => sum + tradeAmount(trade), 0);
   const sellAmount = trades.filter((trade) => trade.side === "sell").reduce((sum, trade) => sum + tradeAmount(trade), 0);
   const fees = trades.reduce((sum, trade) => sum + totalFee(trade), 0);
-  const matched = calculateTradePairPnL().reduce((sum, row) => {
+  const matched = calculateActiveTradePairPnL().reduce((sum, row) => {
     const rangePnl = (row.matchDetails || []).reduce((detailSum, detail) => {
       const completionDate = detail.buyDate > detail.sellDate ? detail.buyDate : detail.sellDate;
       return dateInRange(completionDate, range.startDate, range.endDate) ? detailSum + detail.pnl : detailSum;
@@ -5210,7 +5214,7 @@ function matchCompletionDate(match) {
 
 function rangeMatchDetails(startDate, endDate, symbol = "") {
   const key = normalizeSymbol(symbol);
-  return calculateTradePairPnL()
+  return calculateActiveTradePairPnL()
     .filter((row) => !key || row.symbol === key)
     .flatMap((row) => (row.matchDetails || []).map((match) => ({ ...match, symbol: row.symbol, name: row.name })))
     .filter((match) => dateInRange(matchCompletionDate(match), startDate, endDate));
@@ -5220,6 +5224,35 @@ function tradePairRowsForPeriod(startDate = "", endDate = "") {
   if (!hasDateQuery(startDate, endDate)) return calculateTradePairPnL();
   const range = dateRangeBounds(startDate, endDate);
   return calculateTradePairPnL()
+    .map((row) => {
+      const matchDetails = (row.matchDetails || []).filter((match) => dateInRange(matchCompletionDate(match), range.startDate, range.endDate));
+      if (!matchDetails.length) return null;
+      const matchedQuantity = matchDetails.reduce((sum, match) => sum + match.quantity, 0);
+      const buyCost = matchDetails.reduce((sum, match) => sum + match.buyCost, 0);
+      const sellIncome = matchDetails.reduce((sum, match) => sum + match.sellIncome, 0);
+      const pnl = sellIncome - buyCost;
+      return {
+        ...row,
+        matchedQuantity,
+        buyCost,
+        sellIncome,
+        pnl,
+        matchDetails,
+        unmatchedBuyQuantity: 0,
+        unmatchedSellQuantity: 0,
+        unmatchedQuantity: 0,
+        unmatchedDetails: [],
+        averageBuy: matchedQuantity > 0 ? buyCost / matchedQuantity : 0,
+        averageSell: matchedQuantity > 0 ? sellIncome / matchedQuantity : 0,
+      };
+    })
+    .filter(Boolean);
+}
+
+function profitFirstRowsForPeriod(startDate = "", endDate = "") {
+  if (!hasDateQuery(startDate, endDate)) return calculateProfitFirstTradePairPnL();
+  const range = dateRangeBounds(startDate, endDate);
+  return calculateProfitFirstTradePairPnL()
     .map((row) => {
       const matchDetails = (row.matchDetails || []).filter((match) => dateInRange(matchCompletionDate(match), range.startDate, range.endDate));
       if (!matchDetails.length) return null;
@@ -5886,8 +5919,141 @@ function calculateTradePairPnL(startDate = "", endDate = "", sourceTrades = stat
     .filter((book) => book.matchedQuantity > 0 || book.unmatchedBuyQuantity > 0 || book.unmatchedSellQuantity > 0);
 }
 
+function calculateProfitFirstTradePairPnL(startDate = "", endDate = "", sourceTrades = state.trades) {
+  const books = new Map();
+  const stageTrades = sortedTrades(sourceTrades).filter((trade) => {
+    if (startDate && trade.date < startDate) return false;
+    if (endDate && trade.date > endDate) return false;
+    return true;
+  });
+
+  for (const trade of stageTrades) {
+    const key = normalizeSymbol(trade.symbol);
+    const book = books.get(key) || {
+      symbol: key,
+      name: trade.name,
+      buyLots: [],
+      sellLots: [],
+      matchedQuantity: 0,
+      buyCost: 0,
+      sellIncome: 0,
+      pnl: 0,
+      matchDetails: [],
+    };
+    const amount = tradeAmount(trade);
+    const fee = totalFee(trade);
+    const netAmount = trade.side === "sell" ? amount - fee : amount + fee;
+    const unitNet = trade.quantity > 0 ? netAmount / trade.quantity : 0;
+
+    book.name = trade.name || book.name;
+
+    if (trade.side === "buy") {
+      let remaining = trade.quantity;
+
+      while (remaining > 0 && book.sellLots.length) {
+        const lot = book.sellLots[book.sellLots.length - 1];
+        const used = Math.min(remaining, lot.quantity);
+        const buyCost = used * unitNet;
+        const sellIncome = used * lot.unitIncome;
+        const pnl = sellIncome - buyCost;
+        if (pnl <= 0.000001) break;
+        book.matchedQuantity += used;
+        book.buyCost += buyCost;
+        book.sellIncome += sellIncome;
+        book.pnl += pnl;
+        book.matchDetails.push({
+          quantity: used,
+          buyDate: trade.date,
+          buyPrice: trade.price,
+          sellDate: lot.date,
+          sellPrice: lot.price,
+          buyCost,
+          sellIncome,
+          pnl,
+        });
+        lot.quantity -= used;
+        remaining -= used;
+        if (lot.quantity <= 0.000001) book.sellLots.pop();
+      }
+
+      if (remaining > 0) {
+        book.buyLots.push({
+          quantity: remaining,
+          unitCost: unitNet,
+          price: trade.price,
+          date: trade.date,
+        });
+      }
+    } else {
+      let remaining = trade.quantity;
+
+      while (remaining > 0 && book.buyLots.length) {
+        const lot = book.buyLots[book.buyLots.length - 1];
+        const used = Math.min(remaining, lot.quantity);
+        const buyCost = used * lot.unitCost;
+        const sellIncome = used * unitNet;
+        const pnl = sellIncome - buyCost;
+        if (pnl <= 0.000001) break;
+        book.matchedQuantity += used;
+        book.buyCost += buyCost;
+        book.sellIncome += sellIncome;
+        book.pnl += pnl;
+        book.matchDetails.push({
+          quantity: used,
+          buyDate: lot.date,
+          buyPrice: lot.price,
+          sellDate: trade.date,
+          sellPrice: trade.price,
+          buyCost,
+          sellIncome,
+          pnl,
+        });
+        lot.quantity -= used;
+        remaining -= used;
+        if (lot.quantity <= 0.000001) book.buyLots.pop();
+      }
+
+      if (remaining > 0) {
+        book.sellLots.push({
+          quantity: remaining,
+          unitIncome: unitNet,
+          price: trade.price,
+          date: trade.date,
+        });
+      }
+    }
+
+    books.set(key, book);
+  }
+
+  return [...books.values()]
+    .map((book) => {
+      const unmatchedBuyQuantity = book.buyLots.reduce((sum, lot) => sum + lot.quantity, 0);
+      const unmatchedSellQuantity = book.sellLots.reduce((sum, lot) => sum + lot.quantity, 0);
+      const unmatchedQuantity = unmatchedBuyQuantity - unmatchedSellQuantity;
+      const unmatchedDetails = [
+        ...book.buyLots.map((lot, index) => ({ quantity: lot.quantity, price: lot.price || lot.unitCost, date: lot.date, priority: index })),
+        ...book.sellLots.map((lot, index) => ({ quantity: -lot.quantity, price: lot.price || lot.unitIncome, date: lot.date, priority: index })),
+      ];
+      return {
+        ...book,
+        unmatchedBuyQuantity,
+        unmatchedSellQuantity,
+        unmatchedQuantity,
+        unmatchedDetails,
+        averageBuy: book.matchedQuantity > 0 ? book.buyCost / book.matchedQuantity : 0,
+        averageSell: book.matchedQuantity > 0 ? book.sellIncome / book.matchedQuantity : 0,
+      };
+    })
+    .filter((book) => book.matchedQuantity > 0 || book.unmatchedBuyQuantity > 0 || book.unmatchedSellQuantity > 0);
+}
+
+function calculateActiveTradePairPnL(startDate = "", endDate = "", sourceTrades = state.trades) {
+  return calculateProfitFirstTradePairPnL(startDate, endDate, sourceTrades);
+}
+
 function matchedPnlTotal(trades = state.trades) {
-  return calculateTradePairPnL("", "", trades).reduce((sum, row) => sum + row.pnl, 0);
+  return calculateActiveTradePairPnL("", "", trades).reduce((sum, row) => sum + row.pnl, 0);
 }
 
 function portfolioTotals() {
@@ -6354,7 +6520,7 @@ function renderClosedRank(rows = closedPositionRows()) {
 
 function renderPositions() {
   const { positions } = calculatePortfolio();
-  const matchedBySymbol = new Map(calculateTradePairPnL().map((row) => [row.symbol, row.pnl]));
+  const matchedBySymbol = new Map(calculateActiveTradePairPnL().map((row) => [row.symbol, row.pnl]));
   const current = positions.filter((position) => position.quantity > 0);
   const closed = closedPositionRows(positions);
 
@@ -6760,7 +6926,7 @@ function buildCloseSnapshot(date = today()) {
   const initialAssets = originalAssetsTotal();
   const totalPnl = totals.assets - initialAssets;
   const totalReturnRate = initialAssets > 0 ? (totalPnl / initialAssets) * 100 : 0;
-  const matchedRows = new Map(calculateTradePairPnL().map((row) => [row.symbol, row.pnl]));
+  const matchedRows = new Map(calculateActiveTradePairPnL().map((row) => [row.symbol, row.pnl]));
   const openPositions = positions
     .filter((position) => position.quantity > 0)
     .map((position) => ({
@@ -6803,7 +6969,7 @@ function buildCloseSnapshotForDate(date, priceMap, previousCloseMap = {}, symbol
     const trades = state.trades.filter((trade) => trade.date <= date);
     const { positions, cash } = calculatePortfolio(trades, date);
     const initialAssets = originalAssetsTotal(date);
-    const matchedRows = new Map(calculateTradePairPnL("", date, trades).map((row) => [row.symbol, row.pnl]));
+    const matchedRows = new Map(calculateActiveTradePairPnL("", date, trades).map((row) => [row.symbol, row.pnl]));
     const openPositions = positions
       .filter((position) => position.quantity > 0)
       .map((position) => ({
@@ -7697,18 +7863,35 @@ function renderUnmatchedAverage(row) {
   return average > 0 ? `<span class="subtle-detail">均价 ¥${number(average, 3)}</span>` : "";
 }
 
+function emptyPairRow(symbol = "", name = "") {
+  return {
+    symbol,
+    name,
+    matchedQuantity: 0,
+    unmatchedQuantity: 0,
+    unmatchedDetails: [],
+    pnl: 0,
+    matchDetails: [],
+  };
+}
+
 function renderTradePairRow(row) {
+  const profit = row.profitFirst || emptyPairRow(row.symbol, row.name);
   return `
     <tr>
       <td><span class="stock-name-chip">${row.name}</span></td>
       <td>${number(row.matchedQuantity, 0)}</td>
       <td class="${classByValue(row.unmatchedQuantity)}">${number(row.unmatchedQuantity, 0)} ${renderUnmatchedAverage(row)}${renderUnmatchedDetail(row)}</td>
       <td class="${classByValue(row.pnl)}">${money(row.pnl)}</td>
+      <td>${number(profit.matchedQuantity, 0)}</td>
+      <td class="${classByValue(profit.unmatchedQuantity)}">${number(profit.unmatchedQuantity, 0)} ${renderUnmatchedAverage(profit)}${renderUnmatchedDetail(profit)}</td>
+      <td class="${classByValue(profit.pnl)}">${money(profit.pnl)}</td>
     </tr>
   `;
 }
 
 function renderTradePairCard(row, withDetailButton = false) {
+  const profit = row.profitFirst || emptyPairRow(row.symbol, row.name);
   return `
     <article class="mobile-card">
       <div class="mobile-card-head">
@@ -7719,6 +7902,9 @@ function renderTradePairCard(row, withDetailButton = false) {
         <div><dt>已匹配数量</dt><dd>${number(row.matchedQuantity, 0)}</dd></div>
         <div><dt>匹配实现盈亏</dt><dd class="${classByValue(row.pnl)}">${money(row.pnl)}</dd></div>
         <div class="unmatched-row"><dt>未匹配数量</dt><dd class="${classByValue(row.unmatchedQuantity)}">${number(row.unmatchedQuantity, 0)} ${renderUnmatchedAverage(row)}${renderUnmatchedDetail(row)}</dd></div>
+        <div><dt>盈利优先已匹配</dt><dd>${number(profit.matchedQuantity, 0)}</dd></div>
+        <div><dt>盈利优先盈利</dt><dd class="${classByValue(profit.pnl)}">${money(profit.pnl)}</dd></div>
+        <div class="unmatched-row"><dt>盈利优先未匹配</dt><dd class="${classByValue(profit.unmatchedQuantity)}">${number(profit.unmatchedQuantity, 0)} ${renderUnmatchedAverage(profit)}${renderUnmatchedDetail(profit)}</dd></div>
       </dl>
       ${withDetailButton ? `<div class="row-actions"><button class="icon-action" data-detail-symbol="${row.symbol}">详情</button></div>` : ""}
     </article>
@@ -7728,7 +7914,7 @@ function renderTradePairCard(row, withDetailButton = false) {
 function renderMatchRangeQuery() {
   if (!els.matchRangeStartDate || !els.matchRangeEndDate || !els.matchRangeSummary || !els.matchRangeBody || !els.matchRangeCards) return;
   const range = dateRangeBounds(els.matchRangeStartDate.value, els.matchRangeEndDate.value);
-  const rows = tradePairRowsForPeriod(range.startDate, range.endDate)
+  const rows = profitFirstRowsForPeriod(range.startDate, range.endDate)
     .filter((row) => Math.abs(row.pnl) > 0.000001 || Math.abs(row.matchedQuantity) > 0.000001)
     .sort((a, b) => b.pnl - a.pnl || a.symbol.localeCompare(b.symbol));
   const total = rows.reduce((sum, row) => sum + row.pnl, 0);
@@ -7772,13 +7958,17 @@ function renderMatchRangeQuery() {
     : `<div class="empty-state">这个阶段没有匹配盈亏</div>`;
 }
 function renderTradePairPnL() {
-  const rows = tradePairRowsForPeriod(els.pairStartDate.value, els.pairEndDate.value).sort((a, b) => b.pnl - a.pnl);
+  const profitRows = profitFirstRowsForPeriod(els.pairStartDate.value, els.pairEndDate.value);
+  const profitMap = new Map(profitRows.map((row) => [row.symbol, row]));
+  const rows = tradePairRowsForPeriod(els.pairStartDate.value, els.pairEndDate.value)
+    .map((row) => ({ ...row, profitFirst: profitMap.get(row.symbol) || emptyPairRow(row.symbol, row.name) }))
+    .sort((a, b) => b.pnl - a.pnl);
   const currentSymbols = new Set(calculatePortfolio().positions.filter((position) => position.quantity > 0).map((position) => position.symbol));
   const currentRows = rows.filter((row) => currentSymbols.has(row.symbol));
   const closedRows = rows.filter((row) => !currentSymbols.has(row.symbol)).sort((a, b) => b.pnl - a.pnl || a.symbol.localeCompare(b.symbol));
 
   if (!rows.length) {
-    els.tradePairPnlBody.innerHTML = `<tr><td colspan="4" class="empty-state">暂无可匹配的买卖记录。原来持仓不参与匹配。</td></tr>`;
+    els.tradePairPnlBody.innerHTML = `<tr><td colspan="7" class="empty-state">暂无可匹配的买卖记录。原来持仓不参与匹配。</td></tr>`;
     els.tradePairPnlCards.innerHTML = `<div class="empty-state">暂无可匹配的买卖记录。原来持仓不参与匹配。</div>`;
     if (els.closedPairCards) els.closedPairCards.innerHTML = `<div class="empty-state">暂无已清仓匹配记录</div>`;
     return;
@@ -7786,7 +7976,7 @@ function renderTradePairPnL() {
 
   els.tradePairPnlBody.innerHTML = currentRows.length
     ? currentRows.map(renderTradePairRow).join("")
-    : `<tr><td colspan="4" class="empty-state">当前持仓暂无匹配记录，已清仓股票请点“清仓股票”查看。</td></tr>`;
+    : `<tr><td colspan="7" class="empty-state">当前持仓暂无匹配记录，已清仓股票请点“清仓股票”查看。</td></tr>`;
 
   els.tradePairPnlCards.innerHTML = currentRows.length
     ? currentRows.map((row) => renderTradePairCard(row)).join("")
@@ -7900,12 +8090,7 @@ function renderStockDetail() {
     dayPnl: 0,
     realized: 0,
   };
-  const pair = calculateTradePairPnL().find((row) => row.symbol === symbol) || {
-    matchedQuantity: 0,
-    unmatchedQuantity: 0,
-    unmatchedDetails: [],
-    pnl: 0,
-  };
+  const pair = calculateActiveTradePairPnL().find((row) => row.symbol === symbol) || emptyPairRow(symbol, position.name || names.get(symbol) || symbol);
   const matchedRealized = pair.pnl || 0;
   const assetRealized = Number(position.assetRealized) || 0;
   const dividends = stockDividendTotal(symbol);
@@ -7958,9 +8143,11 @@ function renderStockDetail() {
       <small class="subtle-detail">总盈亏按资产口径计算；低买高卖匹配单独显示，不含原始持仓。</small>
     </article>
   `;
-  els.detailUnmatched.innerHTML = pair.unmatchedDetails && pair.unmatchedDetails.length
-    ? `<div class="mobile-card"><strong>${number(pair.unmatchedQuantity, 0)} ${renderUnmatchedAverage(pair)}</strong>${renderUnmatchedDetail(pair)}</div>`
-    : `<div class="empty-state">暂无未匹配买卖</div>`;
+  const unmatchedBlocks = [];
+  if (pair.unmatchedDetails && pair.unmatchedDetails.length) {
+    unmatchedBlocks.push(`<div class="mobile-card"><strong>${number(pair.unmatchedQuantity, 0)} ${renderUnmatchedAverage(pair)}</strong>${renderUnmatchedDetail(pair)}</div>`);
+  }
+  els.detailUnmatched.innerHTML = unmatchedBlocks.length ? unmatchedBlocks.join("") : `<div class="empty-state">暂无未匹配买卖</div>`;
   const sortedMatches = [...(pair.matchDetails || [])].sort((a, b) => {
     const aDate = a.buyDate > a.sellDate ? a.buyDate : a.sellDate;
     const bDate = b.buyDate > b.sellDate ? b.buyDate : b.sellDate;
