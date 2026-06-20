@@ -3894,6 +3894,10 @@ body {
                   过户费率
                   <input type="number" id="transfer-rate" min="0" step="0.00001" />
                 </label>
+                <label>
+                  ETF卖出不收印花税
+                  <input type="checkbox" id="etf-no-stamp-tax" />
+                </label>
               </div>
               <div class="form-actions">
                 <button class="primary-button" id="save-fees" type="button">保存费用设置</button>
@@ -4118,6 +4122,7 @@ const defaultSettings = {
   minCommission: 5,
   stampRate: 0.0005,
   transferRate: 0.00001,
+  etfNoStampTax: true,
   lastBackupAt: "",
   autoCloseSource: "auto",
   autoCloseBatchSize: 5,
@@ -4351,6 +4356,7 @@ const els = {
   minCommission: document.querySelector("#min-commission"),
   stampRate: document.querySelector("#stamp-rate"),
   transferRate: document.querySelector("#transfer-rate"),
+  etfNoStampTax: document.querySelector("#etf-no-stamp-tax"),
   editingCashTransferId: optionalElement("#editing-cash-transfer-id"),
   cashTransferDate: optionalElement("#cash-transfer-date"),
   cashTransferType: optionalElement("#cash-transfer-type"),
@@ -4599,6 +4605,12 @@ function marketSecid(symbol) {
   return `0.${code}`;
 }
 
+function isEtfSymbol(symbol, name = "") {
+  const code = normalizeSymbol(symbol);
+  const text = String(name || "").toUpperCase();
+  return text.includes("ETF") || /^(159|510|511|512|513|515|516|517|518|520|560|561|562|563|588|589)\d{3}$/.test(code);
+}
+
 function allKnownSymbols() {
   const symbols = new Set();
   state.initialPositions.forEach((item) => {
@@ -4679,7 +4691,8 @@ function tradeAmount(trade) {
 function calcFees(input) {
   const amount = tradeAmount(input);
   const commission = amount > 0 ? Math.max(amount * state.settings.commissionRate, state.settings.minCommission) : 0;
-  const stampTax = input.side === "sell" ? amount * state.settings.stampRate : 0;
+  const skipStampTax = state.settings.etfNoStampTax !== false && isEtfSymbol(input.symbol, input.name);
+  const stampTax = input.side === "sell" && !skipStampTax ? amount * state.settings.stampRate : 0;
   const transferFee = amount * state.settings.transferRate;
 
   return {
@@ -8521,6 +8534,7 @@ function renderSettings() {
   els.minCommission.value = state.settings.minCommission;
   els.stampRate.value = state.settings.stampRate;
   els.transferRate.value = state.settings.transferRate;
+  els.etfNoStampTax.checked = state.settings.etfNoStampTax !== false;
   els.backupStatus.textContent = backupStatusText();
   renderImportGuardStatus();
   if (!els.cashTransferDate.value) els.cashTransferDate.value = today();
@@ -10172,6 +10186,7 @@ document.querySelector("#save-fees").addEventListener("click", () => {
   state.settings.minCommission = Number(els.minCommission.value) || 0;
   state.settings.stampRate = Number(els.stampRate.value) || 0;
   state.settings.transferRate = Number(els.transferRate.value) || 0;
+  state.settings.etfNoStampTax = els.etfNoStampTax.checked;
   save();
   updatePreview();
   renderAll();
