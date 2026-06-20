@@ -2835,8 +2835,8 @@ body {
 
         <div class="sidebar-card">
           <span>核算规则</span>
-          <strong>盈利优先匹配</strong>
-          <p>费用按设置自动计算，只把盈利的反向交易计入主匹配盈亏。</p>
+          <strong>最近原则匹配</strong>
+          <p>费用按设置自动计算，按时间最近的反向交易匹配，盈亏都计入。</p>
         </div>
       </aside>
 
@@ -3055,7 +3055,7 @@ body {
             <div class="modal-head">
               <div>
                 <h3>总匹配盈亏阶段查询</h3>
-                <span>按盈利优先匹配发生日期统计阶段总匹配盈亏与对应个股匹配盈亏</span>
+                <span>按最近反向匹配发生日期统计阶段总匹配盈亏与对应个股匹配盈亏</span>
               </div>
               <button class="icon-action" type="button" data-modal-close>关闭</button>
             </div>
@@ -3090,7 +3090,7 @@ body {
             <div class="modal-head">
               <div>
                 <h3>各股匹配盈亏</h3>
-                <span>保留原规则对照，并新增盈利优先匹配明细</span>
+                <span>主规则为最近反向匹配，右侧保留盈利优先对照</span>
               </div>
               <button class="icon-action" type="button" data-modal-close>关闭</button>
             </div>
@@ -3114,7 +3114,7 @@ body {
                 <thead>
                   <tr>
                     <th>股票名称</th>
-                    <th>原已匹配</th>
+                    <th>最近已匹配</th>
                     <th>未匹配数量</th>
                     <th>匹配实现盈亏</th>
                     <th>盈利优先已匹配</th>
@@ -4082,6 +4082,7 @@ body {
               </div>
               <p class="panel-copy">导出 JSON 后可以作为备份，换浏览器或换电脑时再导入。</p>
               <p class="panel-copy" id="backup-status">还没有备份记录。</p>
+              <p class="panel-copy" id="import-guard-status">导入前会预览，并自动保留一份可撤销快照。</p>
               <div class="stack-actions">
                 <button class="primary-button" id="export-data">导出备份</button>
                 <button class="ghost-button" id="export-csv" type="button">导出CSV</button>
@@ -4089,6 +4090,7 @@ body {
                   导入数据
                   <input type="file" id="import-data" accept="application/json" />
                 </label>
+                <button class="ghost-button" id="undo-last-import" type="button">撤销最近导入</button>
               </div>
             </section>
 
@@ -4106,6 +4108,8 @@ body {
     <script>
 const STORAGE_KEY = "ashare-trading-journal";
 const BACKUP_META_KEY = "ashare-trading-journal-backup-meta";
+const IMPORT_UNDO_DATA_KEY = "ashare-trading-import-undo-data";
+const IMPORT_UNDO_META_KEY = "ashare-trading-import-undo-meta";
 const RECORD_RENDER_LIMIT = 300;
 
 const defaultSettings = {
@@ -4375,6 +4379,8 @@ const els = {
   corporateActionsBody: optionalElement("#corporate-actions-body"),
   corporateActionsCards: optionalElement("#corporate-actions-cards"),
   backupStatus: optionalElement("#backup-status"),
+  importGuardStatus: optionalElement("#import-guard-status"),
+  undoLastImport: optionalElement("#undo-last-import"),
 };
 
 const titles = {
@@ -6049,7 +6055,7 @@ function calculateProfitFirstTradePairPnL(startDate = "", endDate = "", sourceTr
 }
 
 function calculateActiveTradePairPnL(startDate = "", endDate = "", sourceTrades = state.trades) {
-  return calculateProfitFirstTradePairPnL(startDate, endDate, sourceTrades);
+  return calculateTradePairPnL(startDate, endDate, sourceTrades);
 }
 
 function matchedPnlTotal(trades = state.trades) {
@@ -7914,7 +7920,7 @@ function renderTradePairCard(row, withDetailButton = false) {
 function renderMatchRangeQuery() {
   if (!els.matchRangeStartDate || !els.matchRangeEndDate || !els.matchRangeSummary || !els.matchRangeBody || !els.matchRangeCards) return;
   const range = dateRangeBounds(els.matchRangeStartDate.value, els.matchRangeEndDate.value);
-  const rows = profitFirstRowsForPeriod(range.startDate, range.endDate)
+  const rows = tradePairRowsForPeriod(range.startDate, range.endDate)
     .filter((row) => Math.abs(row.pnl) > 0.000001 || Math.abs(row.matchedQuantity) > 0.000001)
     .sort((a, b) => b.pnl - a.pnl || a.symbol.localeCompare(b.symbol));
   const total = rows.reduce((sum, row) => sum + row.pnl, 0);
@@ -8160,6 +8166,28 @@ function renderStockDetail() {
         return dateInRange(completionDate, els.detailMatchStartDate.value, els.detailMatchEndDate.value);
       })
     : sortedMatches.slice(0, 5);
+  const matchRange = dateRangeBounds(els.detailMatchStartDate.value, els.detailMatchEndDate.value);
+  const stagePair = matchQueryActive
+    ? calculateActiveTradePairPnL(matchRange.startDate, matchRange.endDate).find((row) => row.symbol === symbol)
+    : null;
+  const stageSummaryHtml = matchQueryActive
+    ? `
+      <div class="metric-grid three spacing-top">
+        <article class="metric">
+          <span>阶段匹配总盈亏</span>
+          <strong class="${classByValue(stagePair?.pnl || 0)}">${money(stagePair?.pnl || 0)}</strong>
+        </article>
+        <article class="metric">
+          <span>阶段总匹配数</span>
+          <strong>${number(stagePair?.matchedQuantity || 0, 0)}</strong>
+        </article>
+        <article class="metric">
+          <span>阶段未匹配总数</span>
+          <strong class="${classByValue(stagePair?.unmatchedQuantity || 0)}">${number(stagePair?.unmatchedQuantity || 0, 0)}</strong>
+        </article>
+      </div>
+    `
+    : "";
   const renderMatchItem = (match) => `
     <article class="timeline-item">
       <strong>${match.buyDate}<br>${match.sellDate}</strong>
@@ -8170,15 +8198,17 @@ function renderStockDetail() {
       </div>
     </article>
   `;
-  els.detailMatches.innerHTML = displayMatches.length
-    ? `
+  els.detailMatches.innerHTML = `${stageSummaryHtml}${
+    displayMatches.length
+      ? `
       <details class="history-disclosure">
         <summary>${matchQueryActive ? "查看查询结果" : "查看最近匹配"}（${displayMatches.length} 笔）</summary>
         <div class="timeline-list">${displayMatches.map(renderMatchItem).join("")}</div>
       </details>
-      <p class="history-note">${matchQueryActive ? `全部匹配 ${sortedMatches.length} 笔，当前日期段 ${displayMatches.length} 笔。` : `默认显示最近 ${displayMatches.length} 笔，查历史可输入日期段。`}</p>
+      <p class="history-note">${matchQueryActive ? `全部匹配 ${sortedMatches.length} 笔，当前日期段 ${displayMatches.length} 笔；阶段统计按当前日期段内交易重新匹配。` : `默认显示最近 ${displayMatches.length} 笔，查历史可输入日期段。`}</p>
     `
-    : `<div class="empty-state">${matchQueryActive ? "这个日期段没有匹配明细。" : "暂无匹配明细"}</div>`;
+      : `<div class="empty-state">${matchQueryActive ? "这个日期段没有匹配明细。" : "暂无匹配明细"}</div>`
+  }`;
   const timelineQueryActive = hasDateQuery(els.detailTimelineStartDate.value, els.detailTimelineEndDate.value);
   const displayEvents = timelineQueryActive
     ? events.filter((event) => dateInRange(event.date, els.detailTimelineStartDate.value, els.detailTimelineEndDate.value))
@@ -8492,6 +8522,7 @@ function renderSettings() {
   els.stampRate.value = state.settings.stampRate;
   els.transferRate.value = state.settings.transferRate;
   els.backupStatus.textContent = backupStatusText();
+  renderImportGuardStatus();
   if (!els.cashTransferDate.value) els.cashTransferDate.value = today();
   renderCashTransfers();
   renderCorporateActions();
@@ -8960,6 +8991,67 @@ function renderBackupStatusOnly() {
   els.backupReminderText.textContent = shouldRemindBackup
     ? `${backupStatusText()} 建议导出备份，防止浏览器数据丢失。`
     : backupStatusText();
+  renderImportGuardStatus();
+}
+
+function summarizeBackupData(data) {
+  const settings = data && typeof data.settings === "object" ? data.settings : {};
+  const plans = data && data.stockPlans && typeof data.stockPlans === "object" ? data.stockPlans : {};
+  return {
+    trades: Array.isArray(data?.trades) ? data.trades.length : 0,
+    initialPositions: Array.isArray(data?.initialPositions) ? data.initialPositions.length : 0,
+    closeSnapshots: Array.isArray(data?.closeSnapshots) ? data.closeSnapshots.length : 0,
+    cashTransfers: Array.isArray(data?.cashTransfers) ? data.cashTransfers.length : 0,
+    corporateActions: Array.isArray(data?.corporateActions) ? data.corporateActions.length : 0,
+    stockPlans: Object.keys(plans).length,
+    initialCash: Number(settings.initialCash) || 0,
+  };
+}
+
+function backupSummaryText(summary) {
+  return `交易 ${summary.trades} 笔，初始持仓 ${summary.initialPositions} 只，收盘 ${summary.closeSnapshots} 天，现金流水 ${summary.cashTransfers} 条，企业行为 ${summary.corporateActions} 条，计划 ${summary.stockPlans} 只，初始现金 ${money(summary.initialCash)}`;
+}
+
+function normalizeImportedBackup(next) {
+  return {
+    trades: Array.isArray(next.trades) ? next.trades : [],
+    prices: next.prices && typeof next.prices === "object" ? next.prices : {},
+    previousCloses: next.previousCloses && typeof next.previousCloses === "object" ? next.previousCloses : {},
+    initialPositions: Array.isArray(next.initialPositions) ? next.initialPositions : [],
+    corporateActions: Array.isArray(next.corporateActions) ? next.corporateActions : [],
+    cashTransfers: Array.isArray(next.cashTransfers) ? next.cashTransfers : [],
+    closeSnapshots: Array.isArray(next.closeSnapshots) ? next.closeSnapshots : [],
+    stockPlans: next.stockPlans && typeof next.stockPlans === "object" ? next.stockPlans : {},
+    settings: { ...defaultSettings, ...(next.settings || {}) },
+    historicalRebuild: next.historicalRebuild && typeof next.historicalRebuild === "object" ? { snapshotDate: next.historicalRebuild.snapshotDate || "", cash: Number(next.historicalRebuild.cash) || 0, holdings: Array.isArray(next.historicalRebuild.holdings) ? next.historicalRebuild.holdings : [], appliedStartDate: validDateString(next.historicalRebuild.appliedStartDate) ? next.historicalRebuild.appliedStartDate : inferHistoricalRebuildAppliedStartDate(next), currentSnapshot: normalizeHistoricalCurrentSnapshot(next.historicalRebuild.currentSnapshot || next.historicalRebuild) } : { snapshotDate: "", cash: 0, holdings: [], appliedStartDate: "", currentSnapshot: null },
+  };
+}
+
+function renderImportGuardStatus() {
+  if (!els.importGuardStatus || !els.undoLastImport) return;
+  let meta = null;
+  try {
+    meta = JSON.parse(localStorage.getItem(IMPORT_UNDO_META_KEY) || "null");
+  } catch {
+    meta = null;
+  }
+  if (!meta || !meta.createdAt) {
+    els.importGuardStatus.textContent = "导入前会预览，并自动保留一份可撤销快照。";
+    els.undoLastImport.disabled = true;
+    return;
+  }
+  const time = new Date(meta.createdAt).toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+  els.importGuardStatus.textContent = `可撤销最近导入：${time} 前的数据。${meta.summary ? backupSummaryText(meta.summary) : ""}`;
+  els.undoLastImport.disabled = false;
+}
+
+function saveImportUndoSnapshot() {
+  const raw = readStoredBackupJson();
+  const parsed = JSON.parse(raw);
+  const summary = summarizeBackupData(parsed);
+  localStorage.setItem(IMPORT_UNDO_DATA_KEY, raw);
+  localStorage.setItem(IMPORT_UNDO_META_KEY, JSON.stringify({ createdAt: new Date().toISOString(), summary }));
+  renderImportGuardStatus();
 }
 
 async function exportData() {
@@ -9887,25 +9979,78 @@ function importData(file) {
   const reader = new FileReader();
   reader.onload = () => {
     try {
-      const next = JSON.parse(reader.result);
-      state.trades = Array.isArray(next.trades) ? next.trades : [];
-      state.prices = next.prices && typeof next.prices === "object" ? next.prices : {};
-      state.previousCloses = next.previousCloses && typeof next.previousCloses === "object" ? next.previousCloses : {};
-      state.initialPositions = Array.isArray(next.initialPositions) ? next.initialPositions : [];
-      state.corporateActions = Array.isArray(next.corporateActions) ? next.corporateActions : [];
-      state.cashTransfers = Array.isArray(next.cashTransfers) ? next.cashTransfers : [];
-      state.closeSnapshots = Array.isArray(next.closeSnapshots) ? next.closeSnapshots : [];
-      state.stockPlans = next.stockPlans && typeof next.stockPlans === "object" ? next.stockPlans : {};
-      state.settings = { ...defaultSettings, ...(next.settings || {}) };
-      state.historicalRebuild = next.historicalRebuild && typeof next.historicalRebuild === "object" ? { snapshotDate: next.historicalRebuild.snapshotDate || "", cash: Number(next.historicalRebuild.cash) || 0, holdings: Array.isArray(next.historicalRebuild.holdings) ? next.historicalRebuild.holdings : [], appliedStartDate: validDateString(next.historicalRebuild.appliedStartDate) ? next.historicalRebuild.appliedStartDate : inferHistoricalRebuildAppliedStartDate(next), currentSnapshot: normalizeHistoricalCurrentSnapshot(next.historicalRebuild.currentSnapshot || next.historicalRebuild) } : { snapshotDate: "", cash: 0, holdings: [], appliedStartDate: "", currentSnapshot: null };
+      const parsed = JSON.parse(reader.result);
+      const next = normalizeImportedBackup(parsed);
+      const currentSummary = summarizeBackupData(state);
+      const nextSummary = summarizeBackupData(next);
+      const message = [
+        "导入会覆盖当前浏览器数据。导入前会自动保存一份可撤销快照。",
+        "",
+        `当前：${backupSummaryText(currentSummary)}`,
+        `导入：${backupSummaryText(nextSummary)}`,
+        "",
+        "确认导入这个备份吗？",
+      ].join("\n");
+      if (!confirm(message)) return;
+
+      try {
+        saveImportUndoSnapshot();
+      } catch (snapshotError) {
+        const ok = confirm(`导入前撤销快照保存失败：${snapshotError.message || snapshotError}\n\n如果继续导入，将不能一键撤销。是否继续？`);
+        if (!ok) return;
+      }
+
+      state.trades = next.trades;
+      state.prices = next.prices;
+      state.previousCloses = next.previousCloses;
+      state.initialPositions = next.initialPositions;
+      state.corporateActions = next.corporateActions;
+      state.cashTransfers = next.cashTransfers;
+      state.closeSnapshots = next.closeSnapshots;
+      state.stockPlans = next.stockPlans;
+      state.settings = next.settings;
+      state.historicalRebuild = next.historicalRebuild;
       save();
       renderAll();
-      alert("导入完成");
+      alert(`导入完成。\n${backupSummaryText(nextSummary)}\n\n如果发现不对，可以在设置里点“撤销最近导入”。`);
     } catch {
       alert("导入失败，请确认文件是本工具导出的 JSON。");
     }
   };
   reader.readAsText(file);
+}
+
+function undoLastImport() {
+  const raw = localStorage.getItem(IMPORT_UNDO_DATA_KEY);
+  if (!raw) {
+    alert("没有可撤销的最近导入。");
+    renderImportGuardStatus();
+    return;
+  }
+  let previous;
+  try {
+    previous = normalizeImportedBackup(JSON.parse(raw));
+  } catch {
+    alert("撤销快照已损坏，不能恢复。");
+    return;
+  }
+  const summary = summarizeBackupData(previous);
+  if (!confirm(`确认恢复到最近导入前的数据吗？\n${backupSummaryText(summary)}`)) return;
+  state.trades = previous.trades;
+  state.prices = previous.prices;
+  state.previousCloses = previous.previousCloses;
+  state.initialPositions = previous.initialPositions;
+  state.corporateActions = previous.corporateActions;
+  state.cashTransfers = previous.cashTransfers;
+  state.closeSnapshots = previous.closeSnapshots;
+  state.stockPlans = previous.stockPlans;
+  state.settings = previous.settings;
+  state.historicalRebuild = previous.historicalRebuild;
+  save();
+  localStorage.removeItem(IMPORT_UNDO_DATA_KEY);
+  localStorage.removeItem(IMPORT_UNDO_META_KEY);
+  renderAll();
+  alert("已撤销最近导入，恢复到导入前的数据。");
 }
 
 els.navButtons.forEach((button) => {
@@ -10069,6 +10214,7 @@ document.querySelector("#import-data").addEventListener("change", (event) => {
   if (file) importData(file);
   event.target.value = "";
 });
+els.undoLastImport.addEventListener("click", undoLastImport);
 
 els.recordFilter.addEventListener("input", renderRecords);
 els.assetChartStart.addEventListener("change", renderEquityCurve);
