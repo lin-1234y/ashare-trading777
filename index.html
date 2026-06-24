@@ -694,7 +694,7 @@ body.modal-open {
 
 .pnl-calendar {
   display: grid;
-  grid-template-columns: minmax(28px, 0.55fr) repeat(5, minmax(42px, 1fr)) minmax(28px, 0.55fr);
+  grid-template-columns: repeat(5, minmax(52px, 1fr));
   gap: 8px;
 }
 
@@ -723,8 +723,8 @@ body.modal-open {
 }
 
 .pnl-day.positive-day {
-  border-color: rgba(255, 77, 98, 0.48);
-  background: linear-gradient(180deg, rgba(255, 77, 98, 0.18), rgba(42, 12, 20, 0.78));
+  border-color: rgba(69, 130, 210, 0.72);
+  background: linear-gradient(180deg, #12345c, #081a33);
 }
 
 .pnl-day.negative-day {
@@ -742,6 +742,7 @@ body.modal-open {
 }
 
 .pnl-day span {
+  font-size: 14px;
   font-weight: 800;
   white-space: nowrap;
   overflow-wrap: normal;
@@ -1660,7 +1661,7 @@ td {
   }
 
   .pnl-calendar {
-    grid-template-columns: minmax(24px, 0.45fr) repeat(5, minmax(44px, 1fr)) minmax(24px, 0.45fr);
+    grid-template-columns: repeat(5, minmax(0, 1fr));
     gap: 5px;
   }
 
@@ -1670,9 +1671,12 @@ td {
   }
 
   .pnl-day strong,
-  .pnl-day span,
   .calendar-weekday {
     font-size: 11px;
+  }
+
+  .pnl-day span {
+    font-size: 13px;
   }
 
   .panel-header,
@@ -2141,8 +2145,8 @@ textarea:focus {
 
   .positive-day,
   .pnl-day.positive-day {
-    background: rgba(255, 77, 98, 0.12);
-    border-color: rgba(255, 77, 98, 0.34);
+    background: linear-gradient(180deg, #12345c, #081a33);
+    border-color: rgba(69, 130, 210, 0.72);
   }
 
   .negative-day,
@@ -2444,7 +2448,7 @@ label.wide {
 }
 
 .pnl-calendar {
-  grid-template-columns: minmax(24px, 0.45fr) repeat(5, minmax(44px, 1fr)) minmax(24px, 0.45fr);
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 6px;
 }
 
@@ -2455,9 +2459,13 @@ label.wide {
 }
 
 .pnl-day strong,
-.pnl-day span,
 .calendar-weekday {
   font-size: 11px;
+  line-height: 1.15;
+}
+
+.pnl-day span {
+  font-size: 13px;
   line-height: 1.15;
 }
 
@@ -3578,29 +3586,10 @@ body {
             <div class="panel-header">
               <div>
                 <h3>已清仓 / 历史持仓</h3>
-                <span>股数为 0 的股票仍保留复盘数据</span>
+                <span>按需查询，未查询时不计算、不渲染历史持仓</span>
               </div>
-              <button class="ghost-button small" type="button" data-modal-open="closed-rank-modal">盈亏排行</button>
+              <button class="primary-button small" type="button" data-modal-open="closed-rank-modal">查询已清仓股票</button>
             </div>
-            <div class="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>代码</th>
-                    <th>名称</th>
-                    <th>清仓日期</th>
-                    <th>持有天数</th>
-                    <th>实现盈亏</th>
-                    <th>分红</th>
-                    <th>总费用</th>
-                    <th>最终盈亏</th>
-                    <th>详情</th>
-                  </tr>
-                </thead>
-                <tbody id="closed-positions-body"></tbody>
-              </table>
-            </div>
-            <div class="mobile-list" id="closed-positions-cards"></div>
           </section>
         </section>
 
@@ -3609,11 +3598,29 @@ body {
           <div class="modal-card">
             <div class="modal-head">
               <div>
-                <h3>已清仓盈亏排行</h3>
-                <span>按最终盈亏从高到低排列</span>
+                <h3>已清仓股票查询</h3>
+                <span>按清仓日期查询，结果按最终盈亏从高到低排列</span>
               </div>
               <button class="icon-action" type="button" data-modal-close>关闭</button>
             </div>
+            <div class="date-filter">
+              <label>
+                开始
+                <input type="date" id="closed-query-start-date" />
+              </label>
+              <label>
+                结束
+                <input type="date" id="closed-query-end-date" />
+              </label>
+            </div>
+            <label class="spacing-top">
+              股票搜索
+              <input type="search" id="closed-query-keyword" placeholder="输入股票代码或名称" autocomplete="off" />
+            </label>
+            <div class="form-actions spacing-top">
+              <button class="primary-button" type="button" id="query-closed-positions">查询</button>
+            </div>
+            <p class="status-text" id="closed-query-status">尚未查询，不会载入历史持仓。</p>
             <div class="closed-rank-list" id="closed-rank-list"></div>
           </div>
         </section>
@@ -3823,12 +3830,30 @@ body {
         <section class="view" id="records">
           <section class="panel">
             <div class="panel-header">
-              <h3>流水记录</h3>
-              <label class="search-box">
-                <span>筛选</span>
-                <input type="search" id="record-filter" placeholder="代码 / 名称 / 类型 / 备注" />
+              <div>
+                <h3>流水记录</h3>
+                <span>默认显示最近 100 条，可按日期和关键词查询</span>
+              </div>
+            </div>
+            <div class="date-filter">
+              <label>
+                开始
+                <input type="date" id="record-start-date" />
+              </label>
+              <label>
+                结束
+                <input type="date" id="record-end-date" />
               </label>
             </div>
+            <label class="spacing-top">
+              筛选
+              <input type="search" id="record-filter" placeholder="代码 / 名称 / 类型 / 备注" autocomplete="off" />
+            </label>
+            <div class="form-actions spacing-top">
+              <button class="primary-button" type="button" id="query-records">查询</button>
+              <button class="ghost-button" type="button" id="reset-record-query">清除条件</button>
+            </div>
+            <p class="status-text" id="record-query-status"></p>
             <div class="table-wrap">
               <table>
                 <thead>
@@ -4114,7 +4139,9 @@ const STORAGE_KEY = "ashare-trading-journal";
 const BACKUP_META_KEY = "ashare-trading-journal-backup-meta";
 const IMPORT_UNDO_DATA_KEY = "ashare-trading-import-undo-data";
 const IMPORT_UNDO_META_KEY = "ashare-trading-import-undo-meta";
-const RECORD_RENDER_LIMIT = 300;
+const RECORD_RENDER_LIMIT = 100;
+let summaryAnalysisCache = null;
+let coreCalculationCache = null;
 
 const defaultSettings = {
   initialCash: 0,
@@ -4218,13 +4245,21 @@ const els = {
   historicalRebuildPreview: optionalElement("#historical-rebuild-preview"),
   recordsBody: document.querySelector("#records-body"),
   recordsCards: optionalElement("#records-cards"),
+  recordStartDate: optionalElement("#record-start-date"),
+  recordEndDate: optionalElement("#record-end-date"),
   positionsBody: document.querySelector("#positions-body"),
   positionsCards: optionalElement("#positions-cards"),
-  closedPositionsBody: optionalElement("#closed-positions-body"),
-  closedPositionsCards: optionalElement("#closed-positions-cards"),
+  closedQueryStartDate: optionalElement("#closed-query-start-date"),
+  closedQueryEndDate: optionalElement("#closed-query-end-date"),
+  closedQueryKeyword: optionalElement("#closed-query-keyword"),
+  queryClosedPositions: optionalElement("#query-closed-positions"),
+  closedQueryStatus: optionalElement("#closed-query-status"),
   closedRankList: optionalElement("#closed-rank-list"),
   quoteStatus: optionalElement("#quote-status"),
   recordFilter: document.querySelector("#record-filter"),
+  queryRecords: optionalElement("#query-records"),
+  resetRecordQuery: optionalElement("#reset-record-query"),
+  recordQueryStatus: optionalElement("#record-query-status"),
   summaryCount: document.querySelector("#summary-count"),
   allocationPie: optionalElement("#allocation-pie"),
   allocationList: optionalElement("#allocation-list"),
@@ -4681,6 +4716,9 @@ function loadBackupMeta() {
   }
 }
 function save() {
+  summaryAnalysisCache = null;
+  coreCalculationCache = null;
+  invalidateRenderCache();
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 }
 
@@ -4856,8 +4894,9 @@ function calculatePortfolio(trades = state.trades, asOfDate = "") {
   const books = buildInitialBooks();
   applyBonusActions(books);
   let cash = (Number(state.settings.initialCash) || 0) + dividendTotal(asOfDate) + cashTransferTotal(asOfDate);
+  const orderedTrades = sortedTrades(trades);
 
-  for (const trade of sortedTrades(trades)) {
+  for (const trade of orderedTrades) {
     if (!dateOnOrAfterPortfolioStart(trade.date)) continue;
     const key = normalizeSymbol(trade.symbol);
     const book = books.get(key) || {
@@ -4937,6 +4976,14 @@ function calculatePortfolio(trades = state.trades, asOfDate = "") {
       if (book) book.adjustedCost -= dividendNet(action);
     });
 
+  const latestDate = orderedTrades.at(-1)?.date || today();
+  const latestTradesBySymbol = new Map();
+  orderedTrades.forEach((trade) => {
+    if (trade.date !== latestDate) return;
+    const symbol = normalizeSymbol(trade.symbol);
+    if (!latestTradesBySymbol.has(symbol)) latestTradesBySymbol.set(symbol, []);
+    latestTradesBySymbol.get(symbol).push(trade);
+  });
   const realizedRows = [];
   const positions = [...books.values()].map((book) => {
     const quantity = book.lots.reduce((sum, lot) => sum + lot.quantity, 0);
@@ -4948,7 +4995,7 @@ function calculatePortfolio(trades = state.trades, asOfDate = "") {
     const floating = marketValue - holdingCost;
     const totalPnl = quantity > 0 ? marketValue - adjustedCost : book.realized + stockDividendTotal(book.symbol);
     const assetRealized = totalPnl - floating;
-    const dayPnl = calculateStockDayPnl(book.symbol, quantity, price, trades);
+    const dayPnl = calculateStockDayPnl(book.symbol, quantity, price, trades, latestTradesBySymbol.get(book.symbol) || []);
     realizedRows.push(...book.realizedRows);
 
     return {
@@ -4979,14 +5026,16 @@ function latestTradeDate(trades = state.trades) {
   return sortedTrades(trades).at(-1)?.date || today();
 }
 
-function calculateStockDayPnl(symbol, endingQuantity, currentPrice, trades = state.trades) {
+function calculateStockDayPnl(symbol, endingQuantity, currentPrice, trades = state.trades, preparedDayTrades = null) {
   const key = normalizeSymbol(symbol);
   const price = Number(currentPrice) || 0;
   const previousClose = Number(state.previousCloses[key]) || 0;
   if (!price) return 0;
 
-  const dayKey = latestTradeDate(trades);
-  const dayTrades = sortedTrades(trades).filter((trade) => normalizeSymbol(trade.symbol) === key && trade.date === dayKey);
+  const dayTrades = preparedDayTrades || (() => {
+    const dayKey = latestTradeDate(trades);
+    return sortedTrades(trades).filter((trade) => normalizeSymbol(trade.symbol) === key && trade.date === dayKey);
+  })();
   const traded = dayTrades.reduce(
     (acc, trade) => {
       const amount = tradeAmount(trade);
@@ -5172,9 +5221,40 @@ function periodPnlSummary(rows) {
   );
 }
 
-function calculateRangeSummary(startDate = "", endDate = "") {
+function summaryEquityPnlAtDate(analysis, date) {
+  if (!date) return 0;
+  if (analysis.equityPnlByDate.has(date)) return analysis.equityPnlByDate.get(date);
+  const trades = state.trades.filter((trade) => trade.date <= date);
+  const snapshot = calculatePortfolio(trades, date);
+  const marketValue = snapshot.positions.reduce((sum, item) => sum + item.marketValue, 0);
+  const pnl = snapshot.cash + marketValue - originalAssetsTotal(date);
+  analysis.equityPnlByDate.set(date, pnl);
+  return pnl;
+}
+
+function rangePnlFromSummaryAnalysis(startDate, endDate, analysis) {
+  const dates = analysis.equityDates;
+  let firstIndex = -1;
+  let lastIndex = -1;
+  for (let index = 0; index < dates.length; index += 1) {
+    const date = dates[index];
+    if (!dateInRange(date, startDate, endDate)) continue;
+    if (firstIndex < 0) firstIndex = index;
+    lastIndex = index;
+  }
+  if (firstIndex < 0) return 0;
+  const endPnl = summaryEquityPnlAtDate(analysis, dates[lastIndex]);
+  const previousPnl = firstIndex > 0 ? summaryEquityPnlAtDate(analysis, dates[firstIndex - 1]) : 0;
+  return endPnl - previousPnl;
+}
+
+function calculateRangeSummary(startDate = "", endDate = "", analysis = null) {
   const range = dateRangeBounds(startDate, endDate);
-  const rows = calculatePnlCalendarRows().filter((row) => dateInRange(row.date, range.startDate, range.endDate));
+  const pairRows = analysis?.pairRows || currentTradePairRows();
+  const rows = analysis ? null : calculatePnlCalendarRows().filter((row) => dateInRange(row.date, range.startDate, range.endDate));
+  const periodPnl = analysis
+    ? rangePnlFromSummaryAnalysis(range.startDate, range.endDate, analysis)
+    : rows.reduce((sum, row) => sum + row.periodPnl, 0);
   const trades = state.trades.filter((trade) => dateInRange(trade.date, range.startDate, range.endDate));
   const dividends = state.corporateActions
     .filter((action) => action.type === "dividend" && dateInRange(action.date, range.startDate, range.endDate))
@@ -5182,7 +5262,7 @@ function calculateRangeSummary(startDate = "", endDate = "") {
   const buyAmount = trades.filter((trade) => trade.side === "buy").reduce((sum, trade) => sum + tradeAmount(trade), 0);
   const sellAmount = trades.filter((trade) => trade.side === "sell").reduce((sum, trade) => sum + tradeAmount(trade), 0);
   const fees = trades.reduce((sum, trade) => sum + totalFee(trade), 0);
-  const matched = calculateActiveTradePairPnL().reduce((sum, row) => {
+  const matched = pairRows.reduce((sum, row) => {
     const rangePnl = (row.matchDetails || []).reduce((detailSum, detail) => {
       const completionDate = detail.buyDate > detail.sellDate ? detail.buyDate : detail.sellDate;
       return dateInRange(completionDate, range.startDate, range.endDate) ? detailSum + detail.pnl : detailSum;
@@ -5192,8 +5272,8 @@ function calculateRangeSummary(startDate = "", endDate = "") {
 
   return {
     ...range,
-    pnl: rows.reduce((sum, row) => sum + row.periodPnl, 0),
-    totalPnl: rows.reduce((sum, row) => sum + row.periodPnl, 0),
+    pnl: periodPnl,
+    totalPnl: periodPnl,
     matched,
     tradeCount: trades.length,
     buyAmount,
@@ -5231,12 +5311,11 @@ function matchCompletionDate(match) {
   return match.buyDate > match.sellDate ? match.buyDate : match.sellDate;
 }
 
-function rangeMatchDetails(startDate, endDate, symbol = "") {
+function rangeMatchDetails(startDate, endDate, symbol = "", analysis = null) {
   const key = normalizeSymbol(symbol);
-  return calculateActiveTradePairPnL()
-    .filter((row) => !key || row.symbol === key)
-    .flatMap((row) => (row.matchDetails || []).map((match) => ({ ...match, symbol: row.symbol, name: row.name })))
-    .filter((match) => dateInRange(matchCompletionDate(match), startDate, endDate));
+  const details = analysis?.matchDetails || (analysis?.pairRows || currentTradePairRows())
+    .flatMap((row) => (row.matchDetails || []).map((match) => ({ ...match, symbol: row.symbol, name: row.name })));
+  return details.filter((match) => (!key || match.symbol === key) && dateInRange(matchCompletionDate(match), startDate, endDate));
 }
 
 function tradePairRowsForPeriod(startDate = "", endDate = "") {
@@ -5297,18 +5376,43 @@ function profitFirstRowsForPeriod(startDate = "", endDate = "") {
     .filter(Boolean);
 }
 
-function calculatePeriodOverview(kind, key) {
+function getSummaryAnalysisData() {
+  if (summaryAnalysisCache) return summaryAnalysisCache;
+  const pairRows = currentTradePairRows();
+  const currentPortfolio = currentPortfolioSnapshot();
+  summaryAnalysisCache = {
+    pairRows,
+    matchDetails: pairRows.flatMap((row) => (row.matchDetails || []).map((match) => ({
+      ...match,
+      symbol: row.symbol,
+      name: row.name,
+    }))),
+    equityDates: uniqueTradeDates(),
+    equityPnlByDate: new Map(),
+    currentPortfolio,
+    currentPositions: new Map(currentPortfolio.positions.map((position) => [position.symbol, position])),
+    assetTotal: currentPortfolio.positions.reduce((sum, position) => sum + position.marketValue, currentPortfolio.cash),
+    overviewByPeriod: new Map(),
+    stockRowsByPeriod: new Map(),
+  };
+  return summaryAnalysisCache;
+}
+
+function calculatePeriodOverview(kind, key, analysis = null) {
+  const data = analysis || getSummaryAnalysisData();
+  const cacheKey = `${kind}:${key}`;
+  if (data.overviewByPeriod?.has(cacheKey)) return data.overviewByPeriod.get(cacheKey);
   const bounds = periodBounds(kind, key);
-  const summary = calculateRangeSummary(bounds.startDate, bounds.endDate);
+  const summary = calculateRangeSummary(bounds.startDate, bounds.endDate, data);
   const startAssets = snapshotAssetsBefore(bounds.startDate);
-  const matches = rangeMatchDetails(bounds.startDate, bounds.endDate);
+  const matches = rangeMatchDetails(bounds.startDate, bounds.endDate, "", data);
   const winRate = matches.length ? (matches.filter((match) => match.pnl > 0).length / matches.length) * 100 : 0;
   const floating = summary.totalPnl - summary.matched - summary.dividends;
   const previousKey = previousPeriodKey(kind, key);
   const previousBounds = periodBounds(kind, previousKey);
-  const previous = calculateRangeSummary(previousBounds.startDate, previousBounds.endDate);
+  const previous = calculateRangeSummary(previousBounds.startDate, previousBounds.endDate, data);
   const change = summary.totalPnl - previous.totalPnl;
-  return {
+  const result = {
     ...summary,
     ...bounds,
     key,
@@ -5322,43 +5426,58 @@ function calculatePeriodOverview(kind, key) {
     previousPnl: previous.totalPnl,
     change,
   };
+  data.overviewByPeriod?.set(cacheKey, result);
+  return result;
 }
 
-function positionBySymbolFrom(trades) {
-  return new Map(calculatePortfolio(trades).positions.map((position) => [position.symbol, position]));
-}
-
-function calculatePeriodStockRows(kind, key) {
+function calculatePeriodStockRows(kind, key, analysis = null) {
+  const data = analysis || getSummaryAnalysisData();
+  const cacheKey = `${kind}:${key}`;
+  if (data.stockRowsByPeriod?.has(cacheKey)) return data.stockRowsByPeriod.get(cacheKey);
   const bounds = periodBounds(kind, key);
   const names = stockNameMap();
-  const currentPositions = new Map(calculatePortfolio().positions.map((position) => [position.symbol, position]));
-  const startPositions = positionBySymbolFrom(state.trades.filter((trade) => trade.date < bounds.startDate));
-  const endPositions = positionBySymbolFrom(state.trades.filter((trade) => trade.date <= bounds.endDate));
-  const assetTotal = portfolioTotals().assets;
+  const currentPositions = data.currentPositions;
+  const assetTotal = data.assetTotal;
+  const periodTrades = new Map();
+  const periodActions = new Map();
+  const periodMatches = new Map();
 
-  return [...allKnownSymbols()]
+  state.trades.forEach((trade) => {
+    if (!dateInRange(trade.date, bounds.startDate, bounds.endDate)) return;
+    const symbol = normalizeSymbol(trade.symbol);
+    if (!periodTrades.has(symbol)) periodTrades.set(symbol, []);
+    periodTrades.get(symbol).push(trade);
+  });
+  state.corporateActions.forEach((action) => {
+    if (!dateInRange(action.date, bounds.startDate, bounds.endDate)) return;
+    const symbol = normalizeSymbol(action.symbol);
+    if (!periodActions.has(symbol)) periodActions.set(symbol, []);
+    periodActions.get(symbol).push(action);
+  });
+  data.matchDetails.forEach((match) => {
+    if (!dateInRange(matchCompletionDate(match), bounds.startDate, bounds.endDate)) return;
+    if (!periodMatches.has(match.symbol)) periodMatches.set(match.symbol, []);
+    periodMatches.get(match.symbol).push(match);
+  });
+
+  const rows = [...allKnownSymbols()]
     .map((symbol) => {
       const keySymbol = normalizeSymbol(symbol);
-      const trades = state.trades.filter((trade) => normalizeSymbol(trade.symbol) === keySymbol && dateInRange(trade.date, bounds.startDate, bounds.endDate));
-      const actions = state.corporateActions.filter((action) => normalizeSymbol(action.symbol) === keySymbol && dateInRange(action.date, bounds.startDate, bounds.endDate));
+      const trades = periodTrades.get(keySymbol) || [];
+      const actions = periodActions.get(keySymbol) || [];
       const dividends = actions.filter((action) => action.type === "dividend").reduce((sum, action) => sum + dividendNet(action), 0);
       const fees = trades.reduce((sum, trade) => sum + totalFee(trade), 0);
-      const matches = rangeMatchDetails(bounds.startDate, bounds.endDate, keySymbol);
+      const matches = periodMatches.get(keySymbol) || [];
       const matched = matches.reduce((sum, match) => sum + match.pnl, 0);
-      const startFloating = startPositions.get(keySymbol)?.floating || 0;
-      const endFloating = endPositions.get(keySymbol)?.floating || 0;
-      const floating = endFloating - startFloating;
       const current = currentPositions.get(keySymbol) || { quantity: 0, marketValue: 0, totalPnl: 0, name: names.get(keySymbol) || keySymbol };
       const tradeCount = trades.length;
       const winRate = matches.length ? (matches.filter((match) => match.pnl > 0).length / matches.length) * 100 : 0;
       const totalPnl = Number(current.totalPnl) || 0;
-      const hasActivity = tradeCount || actions.length || matches.length || current.quantity > 0 || Math.abs(totalPnl) > 0.000001;
       return {
         symbol: keySymbol,
         name: current.name || names.get(keySymbol) || keySymbol,
         totalPnl,
         matched,
-        floating,
         dividends,
         fees,
         tradeCount,
@@ -5366,10 +5485,13 @@ function calculatePeriodStockRows(kind, key) {
         winRate,
         allocation: assetTotal > 0 ? (current.marketValue / assetTotal) * 100 : 0,
         currentQuantity: current.quantity || 0,
+        hasPeriodActivity: Boolean(tradeCount || actions.length || matches.length),
       };
     })
-    .filter((row) => row.symbol && row.name && (row.currentQuantity > 0 || row.tradeCount || row.dividends || row.matchCount || Math.abs(row.totalPnl) > 0.000001))
+    .filter((row) => row.symbol && row.name && (row.currentQuantity > 0 || row.hasPeriodActivity))
     .sort((a, b) => b.totalPnl - a.totalPnl);
+  data.stockRowsByPeriod?.set(cacheKey, rows);
+  return rows;
 }
 
 function summaryToneText(change) {
@@ -5775,7 +5897,7 @@ async function fillStockInfo(symbolInput, nameInput) {
 
 async function refreshQuotes() {
   const symbols = [...new Set(
-    calculatePortfolio().positions
+    currentPortfolioSnapshot().positions
       .filter((position) => Number(position.quantity) > 0)
       .map((position) => normalizeSymbol(position.symbol))
       .filter(Boolean),
@@ -6071,12 +6193,38 @@ function calculateActiveTradePairPnL(startDate = "", endDate = "", sourceTrades 
   return calculateTradePairPnL(startDate, endDate, sourceTrades);
 }
 
+function getCoreCalculationCache() {
+  if (!coreCalculationCache) coreCalculationCache = {};
+  return coreCalculationCache;
+}
+
+function currentPortfolioSnapshot() {
+  const cache = getCoreCalculationCache();
+  if (!cache.portfolio) cache.portfolio = calculatePortfolio();
+  return cache.portfolio;
+}
+
+function currentTradePairRows() {
+  const cache = getCoreCalculationCache();
+  if (!cache.pairRows) cache.pairRows = calculateActiveTradePairPnL();
+  return cache.pairRows;
+}
+
+function currentSnapshotCalendarRows() {
+  const cache = getCoreCalculationCache();
+  if (!cache.snapshotRows) cache.snapshotRows = calculateSnapshotCalendarRows();
+  return cache.snapshotRows;
+}
+
 function matchedPnlTotal(trades = state.trades) {
-  return calculateActiveTradePairPnL("", "", trades).reduce((sum, row) => sum + row.pnl, 0);
+  const rows = trades === state.trades ? currentTradePairRows() : calculateActiveTradePairPnL("", "", trades);
+  return rows.reduce((sum, row) => sum + row.pnl, 0);
 }
 
 function portfolioTotals() {
-  const { positions, cash } = calculatePortfolio();
+  const cache = getCoreCalculationCache();
+  if (cache.totals) return cache.totals;
+  const { positions, cash } = currentPortfolioSnapshot();
   const totals = positions.reduce(
     (acc, position) => {
       acc.cost += position.cost;
@@ -6088,11 +6236,12 @@ function portfolioTotals() {
     { cash, assets: cash, cost: 0, marketValue: 0, floating: 0, realized: 0 },
   );
   totals.assets = totals.cash + totals.marketValue;
+  cache.totals = totals;
   return totals;
 }
 
 function calculateDayPnl() {
-  const { positions } = calculatePortfolio();
+  const { positions } = currentPortfolioSnapshot();
   return positions.reduce((sum, position) => {
     if (position.quantity <= 0) return sum;
     const current = Number(state.prices[position.symbol]) || 0;
@@ -6106,7 +6255,7 @@ function setView(viewId) {
   els.views.forEach((view) => view.classList.toggle("active", view.id === viewId));
   els.navButtons.forEach((button) => button.classList.toggle("active", button.dataset.view === viewId));
   els.pageTitle.textContent = titles[viewId] || "总览";
-  applyMobileNumericKeyboards();
+  scheduleViewRender(viewId);
 }
 
 function applyMobileNumericKeyboards(root = document) {
@@ -6396,17 +6545,33 @@ function stockInvestedCost(symbol) {
 
 function openStockDetail(symbol) {
   selectedDetailSymbol = normalizeSymbol(symbol);
-  renderStockDetail();
+  invalidateView("stock-detail");
   setView("stock-detail");
 }
 
 function renderRecords() {
   const keyword = els.recordFilter.value.trim().toLowerCase();
-  const records = buildFlowRecords().filter((row) => `${row.symbol} ${row.name} ${row.type} ${row.note}`.toLowerCase().includes(keyword));
-  const visibleRecords = keyword ? records : records.slice(0, RECORD_RENDER_LIMIT);
-  const limitNote = !keyword && records.length > visibleRecords.length
-    ? `已显示最近 ${visibleRecords.length} 条，共 ${records.length} 条；查旧记录可用上方搜索。`
+  const start = els.recordStartDate.value;
+  const end = els.recordEndDate.value;
+  if (start && end && start > end) {
+    els.recordQueryStatus.textContent = "开始日期不能晚于结束日期。";
+    els.recordsBody.innerHTML = "";
+    els.recordsCards.innerHTML = "";
+    return;
+  }
+
+  const records = buildFlowRecords().filter((row) => {
+    if (start && (!row.date || row.date < start)) return false;
+    if (end && (!row.date || row.date > end)) return false;
+    return `${row.symbol} ${row.name} ${row.type} ${row.note}`.toLowerCase().includes(keyword);
+  });
+  const visibleRecords = records.slice(0, RECORD_RENDER_LIMIT);
+  const limitNote = records.length > visibleRecords.length
+    ? `命中 ${records.length} 条，为保持流畅只显示最近 ${visibleRecords.length} 条。`
     : "";
+  const rangeText = start || end ? `${start || "最早"} 至 ${end || "最新"}` : "全部日期";
+  const keywordText = keyword ? `，筛选“${els.recordFilter.value.trim()}”` : "";
+  els.recordQueryStatus.textContent = `${rangeText}${keywordText}：找到 ${records.length} 条，显示 ${visibleRecords.length} 条。`;
 
   if (!records.length) {
     els.recordsBody.innerHTML = `<tr><td colspan="12" class="empty-state">还没有流水记录</td></tr>`;
@@ -6489,7 +6654,14 @@ function renderRecords() {
     .join("") + (limitNote ? `<p class="history-note">${limitNote}</p>` : "");
 }
 
-function closedPositionRows(positions = calculatePortfolio().positions) {
+function resetRecordQuery() {
+  els.recordStartDate.value = "";
+  els.recordEndDate.value = "";
+  els.recordFilter.value = "";
+  renderRecords();
+}
+
+function closedPositionRows(positions = currentPortfolioSnapshot().positions) {
   const currentSymbols = new Set(positions.filter((position) => position.quantity > 0).map((position) => position.symbol));
   const names = stockNameMap();
   return [...allKnownSymbols()]
@@ -6514,7 +6686,7 @@ function closedPositionRows(positions = calculatePortfolio().positions) {
     .filter((row) => row.realized !== 0 || row.dividends !== 0 || state.trades.some((trade) => normalizeSymbol(trade.symbol) === row.symbol));
 }
 
-function renderClosedRank(rows = closedPositionRows()) {
+function renderClosedRank(rows = []) {
   const sorted = [...rows].sort((a, b) => b.totalPnl - a.totalPnl || a.symbol.localeCompare(b.symbol));
   els.closedRankList.innerHTML = sorted.length
     ? sorted.map((row) => `
@@ -6537,11 +6709,45 @@ function renderClosedRank(rows = closedPositionRows()) {
     : `<div class="empty-state">暂无已清仓股票</div>`;
 }
 
+function resetClosedPositionQuery() {
+  els.closedQueryStartDate.value = "";
+  els.closedQueryEndDate.value = "";
+  els.closedQueryKeyword.value = "";
+  els.closedQueryStatus.textContent = "尚未查询，不会载入历史持仓。";
+  els.closedRankList.innerHTML = "";
+}
+
+function queryClosedPositions() {
+  const start = els.closedQueryStartDate.value;
+  const end = els.closedQueryEndDate.value;
+  const keyword = String(els.closedQueryKeyword.value || "").trim().toLowerCase();
+  if (start && end && start > end) {
+    els.closedQueryStatus.textContent = "开始日期不能晚于结束日期。";
+    els.closedRankList.innerHTML = "";
+    return;
+  }
+
+  els.closedQueryStatus.textContent = "正在计算已清仓股票...";
+  els.closedRankList.innerHTML = "";
+  window.requestAnimationFrame(() => {
+    const { positions } = currentPortfolioSnapshot();
+    const rows = closedPositionRows(positions).filter((row) => {
+      if (start && (!row.closeDate || row.closeDate < start)) return false;
+      if (end && (!row.closeDate || row.closeDate > end)) return false;
+      if (keyword && !`${row.symbol} ${row.name}`.toLowerCase().includes(keyword)) return false;
+      return true;
+    });
+    renderClosedRank(rows);
+    const rangeText = start || end ? `${start || "最早"} 至 ${end || "最新"}` : "全部日期";
+    const keywordText = keyword ? `，搜索“${els.closedQueryKeyword.value.trim()}”` : "";
+    els.closedQueryStatus.textContent = `${rangeText}${keywordText}：找到 ${rows.length} 只已清仓股票。`;
+  });
+}
+
 function renderPositions() {
-  const { positions } = calculatePortfolio();
-  const matchedBySymbol = new Map(calculateActiveTradePairPnL().map((row) => [row.symbol, row.pnl]));
+  const { positions } = currentPortfolioSnapshot();
+  const matchedBySymbol = new Map(currentTradePairRows().map((row) => [row.symbol, row.pnl]));
   const current = positions.filter((position) => position.quantity > 0);
-  const closed = closedPositionRows(positions);
 
   if (!current.length) {
     els.positionsBody.innerHTML = `<tr><td colspan="14" class="empty-state">暂无当前持仓</td></tr>`;
@@ -6587,44 +6793,21 @@ function renderPositions() {
         </article>`;
     }).join("");
   }
-
-  if (!closed.length) {
-    els.closedPositionsBody.innerHTML = `<tr><td colspan="9" class="empty-state">暂无已清仓股票</td></tr>`;
-    els.closedPositionsCards.innerHTML = `<div class="empty-state">暂无已清仓股票</div>`;
-    renderClosedRank([]);
-    return;
-  }
-
-  const closedRows = [...closed].sort((a, b) => (b.closeDate || "").localeCompare(a.closeDate || ""));
-  els.closedPositionsBody.innerHTML = closedRows.map((row) => `
-    <tr>
-      <td>${row.symbol}</td><td><span class="stock-name-chip">${row.name}</span></td><td>${row.closeDate || "-"}</td><td>${row.days}</td>
-      <td class="${classByValue(row.realized)}">${money(row.realized)}</td><td>${money(row.dividends)}</td><td>${money(row.fees)}</td><td class="${classByValue(row.totalPnl)}">${money(row.totalPnl)}</td>
-      <td><button class="icon-action" data-detail-symbol="${row.symbol}">详情</button></td>
-    </tr>`).join("");
-  els.closedPositionsCards.innerHTML = closedRows.map((row) => `
-    <article class="mobile-card"><div class="mobile-card-head"><strong class="stock-name-chip">${row.name}</strong><span>${row.symbol}</span></div><dl>
-      <div><dt>清仓日期</dt><dd>${row.closeDate || "-"}</dd></div><div><dt>持有天数</dt><dd>${row.days}</dd></div><div><dt>实现盈亏</dt><dd class="${classByValue(row.realized)}">${money(row.realized)}</dd></div>
-      <div><dt>净分红</dt><dd>${money(row.dividends)}</dd></div><div><dt>总费用</dt><dd>${money(row.fees)}</dd></div><div><dt>最终盈亏</dt><dd class="${classByValue(row.totalPnl)}">${money(row.totalPnl)}</dd></div>
-    </dl><div class="row-actions"><button class="icon-action" data-detail-symbol="${row.symbol}">详情</button></div></article>`).join("");
-  renderClosedRank(closed);
 }
 function renderDashboard() {
+  const portfolio = currentPortfolioSnapshot();
+  const { positions } = portfolio;
   const totals = portfolioTotals();
-  const { positions, realizedRows } = calculatePortfolio();
+  const snapshotRows = currentSnapshotCalendarRows();
   const totalFees = state.trades.reduce((sum, trade) => sum + totalFee(trade), 0);
   const assets = totals.assets;
   const initialAssets = originalAssetsTotal();
   const totalReturnRate = initialAssets > 0 ? ((assets - initialAssets) / initialAssets) * 100 : 0;
-  const twr = calculateTimeWeightedReturn(calculateSnapshotCalendarRows());
+  const twr = calculateTimeWeightedReturn(snapshotRows);
   const totalPnl = assets - initialAssets;
-  const periodSummary = periodPnlSummary(calculateSnapshotCalendarRows());
+  const periodSummary = periodPnlSummary(snapshotRows);
   const dayPnl = periodSummary.day;
   const assetRealizedPnl = totalPnl - totals.floating - dividendTotal();
-  const matchedRealized = matchedPnlTotal();
-  const sellCount = state.trades.filter((trade) => trade.side === "sell").length;
-  const winCount = realizedRows.filter((row) => row.pnl > 0).length;
-  const winRate = sellCount ? (winCount / sellCount) * 100 : 0;
 
   els.assets.textContent = money(assets);
   els.totalReturn.textContent = `${number(totalReturnRate, 2)}%`;
@@ -6639,7 +6822,6 @@ function renderDashboard() {
   els.monthPnl.textContent = money(periodSummary.month);
   els.yearPnl.textContent = money(periodSummary.year);
   if (els.realized) els.realized.textContent = money(assetRealizedPnl);
-  els.matchedRealized.textContent = money(matchedRealized);
   els.totalFees.textContent = money(totalFees);
   els.dividends.textContent = money(dividendTotal());
   els.totalReturn.className = classByValue(totalReturnRate);
@@ -6650,7 +6832,16 @@ function renderDashboard() {
   els.monthPnl.className = classByValue(periodSummary.month);
   els.yearPnl.className = classByValue(periodSummary.year);
   if (els.realized) els.realized.className = classByValue(assetRealizedPnl);
-  els.matchedRealized.className = classByValue(matchedRealized);
+  const cachedPairRows = getCoreCalculationCache().pairRows;
+  if (cachedPairRows) {
+    renderDashboardMatchedPnl();
+  } else {
+    els.matchedRealized.textContent = "计算中";
+    els.matchedRealized.className = "";
+    scheduleIdleRender(() => {
+      if (activeViewId() === "dashboard") renderDashboardMatchedPnl();
+    }, 800);
+  }
   els.summaryCount.textContent = `${state.trades.length} 笔交易`;
   const backupAge = daysSince(state.settings.lastBackupAt);
   const shouldRemindBackup = !state.settings.lastBackupAt || backupAge >= 7;
@@ -6659,22 +6850,20 @@ function renderDashboard() {
     ? `${backupStatusText()} 建议导出备份，防止浏览器数据丢失。`
     : backupStatusText();
 
-  renderAllocation(positions);
-  renderDividendDetails();
-  renderEquityCurve();
-  renderRangeSummary();
-  renderCloseSnapshots();
-  renderTradePairPnL();
-  renderStockTimeline();
-  renderReports();
-  renderStockDetail();
+  renderDashboardCalendar();
 }
 
-function renderAllocation(positions) {
+function renderDashboardMatchedPnl() {
+  const matchedRealized = matchedPnlTotal();
+  els.matchedRealized.textContent = money(matchedRealized);
+  els.matchedRealized.className = classByValue(matchedRealized);
+}
+
+function renderAllocation(positions = currentPortfolioSnapshot().positions, totals = portfolioTotals()) {
   const open = positions.filter((position) => position.quantity > 0 && position.marketValue > 0);
   const total = open.reduce((sum, position) => sum + position.marketValue, 0);
-  const assetTotal = portfolioTotals().assets;
-  const cash = portfolioTotals().cash;
+  const assetTotal = totals.assets;
+  const cash = totals.cash;
   const colors = ["#176b87", "#c23b42", "#18805f", "#b76e00", "#5a4fcf", "#0f8b8d", "#9b5de5", "#ef476f"];
 
   if ((!open.length || total <= 0) && cash <= 0) {
@@ -6733,52 +6922,15 @@ function renderAllocation(positions) {
   els.allocationList.innerHTML = rows.join("");
 }
 
-function renderEquityCurve() {
-  const chronological = calculateSnapshotCalendarRows();
-  const rows = chronological.slice(-8).reverse();
-  const drawdown = calculateMaxDrawdown(chronological);
+function renderDashboardCalendar() {
+  const chronological = currentSnapshotCalendarRows();
   if (!els.calendarMonth.value) els.calendarMonth.value = currentMonthKey();
-  renderAssetLineChart(chronological);
   renderPnlCalendar(chronological);
-  renderAnnualCalendar(chronological);
-  renderDrawdownSummary(drawdown);
+}
 
-  if (!rows.length) {
-    els.equityCurveBody.innerHTML = `<tr><td colspan="4" class="empty-state">暂无收盘记录，点“记录今日收盘”或“自动补历史收盘”后显示。</td></tr>`;
-    els.equityCurveCards.innerHTML = `<div class="empty-state">暂无收盘记录，点“记录今日收盘”或“自动补历史收盘”后显示。</div>`;
-    return;
-  }
-
-  els.equityCurveBody.innerHTML = rows
-    .map(
-      (row) => `
-        <tr>
-          <td>${row.date}</td>
-          <td class="${classByValue(row.periodPnl)}">${money(row.periodPnl)}</td>
-          <td class="${classByValue(row.pnl)}">${money(row.pnl)}</td>
-          <td>${money(row.assets)}</td>
-        </tr>
-      `,
-    )
-    .join("");
-
-  els.equityCurveCards.innerHTML = rows
-    .map(
-      (row) => `
-        <article class="mobile-card">
-          <div class="mobile-card-head">
-            <strong>${row.date}</strong>
-            <span class="${classByValue(row.periodPnl)}">${money(row.periodPnl)}</span>
-          </div>
-          <dl>
-            <div><dt>当日盈亏</dt><dd class="${classByValue(row.periodPnl)}">${money(row.periodPnl)}</dd></div>
-            <div><dt>累计盈亏</dt><dd class="${classByValue(row.pnl)}">${money(row.pnl)}</dd></div>
-            <div><dt>总资产</dt><dd>${money(row.assets)}</dd></div>
-          </dl>
-        </article>
-      `,
-    )
-    .join("");
+function renderEquityCurve() {
+  const chronological = currentSnapshotCalendarRows();
+  renderAssetLineChart(chronological);
 }
 
 function renderPnlCalendar(rows) {
@@ -6795,7 +6947,6 @@ function renderPnlCalendar(rows) {
   const monthRows = rows.filter((row) => row.date.startsWith(monthKey));
   const monthTotal = monthRows.reduce((sum, row) => sum + (Number(row.periodPnl) || 0), 0);
   const pnlByDate = new Map(monthRows.map((row) => [row.date, row.periodPnl]));
-  const firstDay = new Date(year, month - 1, 1).getDay();
   const daysInMonth = new Date(year, month, 0).getDate();
   const cells = [];
   els.calendarMonthTotal.textContent = moneyInt(monthTotal);
@@ -6806,11 +6957,15 @@ function renderPnlCalendar(rows) {
   els.calendarMonthReturn.textContent = `${number(monthReturn, 2)}%`;
   els.calendarMonthReturn.className = classByValue(monthReturn);
 
-  for (let index = 0; index < firstDay; index += 1) {
+  const firstDayOfWeek = new Date(year, month - 1, 1).getDay();
+  const firstTradingOffset = firstDayOfWeek >= 1 && firstDayOfWeek <= 5 ? firstDayOfWeek - 1 : 0;
+  for (let index = 0; index < firstTradingOffset; index += 1) {
     cells.push(`<div class="pnl-day empty" aria-hidden="true"></div>`);
   }
 
   for (let day = 1; day <= daysInMonth; day += 1) {
+    const dayOfWeek = new Date(year, month - 1, day).getDay();
+    if (dayOfWeek === 0 || dayOfWeek === 6) continue;
     const date = `${monthKey}-${String(day).padStart(2, "0")}`;
     const pnl = pnlByDate.get(date) || 0;
     const tone = pnl > 0 ? "positive-day" : pnl < 0 ? "negative-day" : "";
@@ -6824,7 +6979,7 @@ function renderPnlCalendar(rows) {
 
   els.equityChart.innerHTML = `
     <div class="pnl-calendar" aria-label="阶段盈亏日历">
-      ${["日", "一", "二", "三", "四", "五", "六"].map((day) => `<div class="calendar-weekday">${day}</div>`).join("")}
+      ${["一", "二", "三", "四", "五"].map((day) => `<div class="calendar-weekday">${day}</div>`).join("")}
       ${cells.join("")}
     </div>
   `;
@@ -6940,12 +7095,12 @@ function renderRangeSummary() {
 }
 
 function buildCloseSnapshot(date = today()) {
-  const { positions } = calculatePortfolio();
+  const { positions } = currentPortfolioSnapshot();
   const totals = portfolioTotals();
   const initialAssets = originalAssetsTotal();
   const totalPnl = totals.assets - initialAssets;
   const totalReturnRate = initialAssets > 0 ? (totalPnl / initialAssets) * 100 : 0;
-  const matchedRows = new Map(calculateActiveTradePairPnL().map((row) => [row.symbol, row.pnl]));
+  const matchedRows = new Map(currentTradePairRows().map((row) => [row.symbol, row.pnl]));
   const openPositions = positions
     .filter((position) => position.quantity > 0)
     .map((position) => ({
@@ -7982,7 +8137,7 @@ function renderTradePairPnL() {
   const rows = tradePairRowsForPeriod(els.pairStartDate.value, els.pairEndDate.value)
     .map((row) => ({ ...row, profitFirst: profitMap.get(row.symbol) || emptyPairRow(row.symbol, row.name) }))
     .sort((a, b) => b.pnl - a.pnl);
-  const currentSymbols = new Set(calculatePortfolio().positions.filter((position) => position.quantity > 0).map((position) => position.symbol));
+  const currentSymbols = new Set(currentPortfolioSnapshot().positions.filter((position) => position.quantity > 0).map((position) => position.symbol));
   const currentRows = rows.filter((row) => currentSymbols.has(row.symbol));
   const closedRows = rows.filter((row) => !currentSymbols.has(row.symbol)).sort((a, b) => b.pnl - a.pnl || a.symbol.localeCompare(b.symbol));
 
@@ -8011,7 +8166,7 @@ function stockSelectionBuckets() {
   const names = stockNameMap();
   const symbols = [...allKnownSymbols()].sort();
   const openSet = new Set(
-    calculatePortfolio().positions
+    currentPortfolioSnapshot().positions
       .filter((position) => Number(position.quantity) > 0)
       .map((position) => position.symbol),
   );
@@ -8094,7 +8249,7 @@ function renderStockDetail() {
   const names = stockNameMap();
   if (!selectedDetailSymbol && symbols.length) selectedDetailSymbol = symbols[0];
   const symbol = selectedDetailSymbol;
-  const position = calculatePortfolio().positions.find((item) => item.symbol === symbol) || {
+  const position = currentPortfolioSnapshot().positions.find((item) => item.symbol === symbol) || {
     symbol,
     name: names.get(symbol) || symbol,
     quantity: 0,
@@ -8109,7 +8264,7 @@ function renderStockDetail() {
     dayPnl: 0,
     realized: 0,
   };
-  const pair = calculateActiveTradePairPnL().find((row) => row.symbol === symbol) || emptyPairRow(symbol, position.name || names.get(symbol) || symbol);
+  const pair = currentTradePairRows().find((row) => row.symbol === symbol) || emptyPairRow(symbol, position.name || names.get(symbol) || symbol);
   const matchedRealized = pair.pnl || 0;
   const assetRealized = Number(position.assetRealized) || 0;
   const dividends = stockDividendTotal(symbol);
@@ -8308,18 +8463,26 @@ function renderReports() {
   renderStockReportDailyRows(monthRows);
 }
 
+function renderReportsView() {
+  renderStockTimeline();
+  renderReports();
+}
+
 function renderStockReportCalendar(rows, monthKey) {
   const [year, month] = monthKey.split("-").map(Number);
   const rowByDate = new Map(rows.map((row) => [row.date, row]));
-  const firstDay = new Date(year, month - 1, 1).getDay();
   const daysInMonth = new Date(year, month, 0).getDate();
   const cells = [];
 
-  for (let index = 0; index < firstDay; index += 1) {
+  const firstDayOfWeek = new Date(year, month - 1, 1).getDay();
+  const firstTradingOffset = firstDayOfWeek >= 1 && firstDayOfWeek <= 5 ? firstDayOfWeek - 1 : 0;
+  for (let index = 0; index < firstTradingOffset; index += 1) {
     cells.push(`<div class="pnl-day empty" aria-hidden="true"></div>`);
   }
 
   for (let day = 1; day <= daysInMonth; day += 1) {
+    const dayOfWeek = new Date(year, month - 1, day).getDay();
+    if (dayOfWeek === 0 || dayOfWeek === 6) continue;
     const date = `${monthKey}-${String(day).padStart(2, "0")}`;
     const row = rowByDate.get(date);
     const pnl = row ? row.totalPnl : 0;
@@ -8336,7 +8499,7 @@ function renderStockReportCalendar(rows, monthKey) {
 
   els.reportCalendar.innerHTML = `
     <div class="pnl-calendar" aria-label="个股盈亏日历">
-      ${["日", "一", "二", "三", "四", "五", "六"].map((day) => `<div class="calendar-weekday">${day}</div>`).join("")}
+      ${["一", "二", "三", "四", "五"].map((day) => `<div class="calendar-weekday">${day}</div>`).join("")}
       ${cells.join("")}
     </div>
   `;
@@ -8393,8 +8556,9 @@ function renderPerformanceSummary() {
   els.summaryPeriod.innerHTML = options.map((key) => `<option value="${key}">${periodLabel(summaryPeriodKind, key)}</option>`).join("");
   els.summaryPeriod.value = selected;
 
-  const overview = calculatePeriodOverview(summaryPeriodKind, selected);
-  const rows = calculatePeriodStockRows(summaryPeriodKind, selected);
+  const analysis = getSummaryAnalysisData();
+  const overview = calculatePeriodOverview(summaryPeriodKind, selected, analysis);
+  const rows = calculatePeriodStockRows(summaryPeriodKind, selected, analysis);
   renderPerformanceMetrics(overview);
   renderOverallInsights(overview, rows);
   renderPerformanceStockRows(rows);
@@ -8728,7 +8892,7 @@ function saveAccountSettings() {
   const assets = totals.assets;
   const initialAssets = originalAssetsTotal();
   const totalReturnRate = initialAssets > 0 ? ((assets - initialAssets) / initialAssets) * 100 : 0;
-  const twr = calculateTimeWeightedReturn(calculateSnapshotCalendarRows());
+  const twr = calculateTimeWeightedReturn(currentSnapshotCalendarRows());
 
   els.cash.textContent = money(totals.cash);
   els.assets.textContent = money(assets);
@@ -8744,16 +8908,75 @@ function saveAccountSettings() {
   renderAll();
 }
 
-function renderAll() {
-  const renderers = [renderDashboard, renderPerformanceSummary, renderPositions, renderRecords, renderSettings, renderHistoricalRebuild];
-  for (const render of renderers) {
-    try {
-      render();
-    } catch (error) {
-      console.error("Render failed:", error);
-    }
+function activeViewId() {
+  return document.querySelector(".view.active")?.id || "dashboard";
+}
+
+let renderRevision = 0;
+let pendingViewRenderHandle = null;
+const renderedViewRevisions = new Map();
+
+function invalidateRenderCache() {
+  renderRevision += 1;
+  renderedViewRevisions.clear();
+}
+
+function invalidateView(viewId) {
+  renderedViewRevisions.delete(viewId);
+}
+
+function isViewFresh(viewId) {
+  return renderedViewRevisions.get(viewId) === renderRevision;
+}
+
+function renderTradeFormView() {
+  updatePreview();
+  renderHistoricalRebuild();
+}
+
+function renderView(viewId = activeViewId(), options = {}) {
+  const renderers = {
+    dashboard: renderDashboard,
+    "close-snapshots": renderCloseSnapshots,
+    "trade-form": renderTradeFormView,
+    positions: renderPositions,
+    records: renderRecords,
+    "performance-summary": renderPerformanceSummary,
+    reports: renderReportsView,
+    settings: renderSettings,
+    "stock-detail": renderStockDetail,
+  };
+  const render = renderers[viewId] || renderDashboard;
+  if (!options.force && isViewFresh(viewId)) {
+    applyMobileNumericKeyboards(document.getElementById(viewId) || document);
+    return;
   }
-  applyMobileNumericKeyboards();
+  try {
+    render();
+    renderedViewRevisions.set(viewId, renderRevision);
+  } catch (error) {
+    console.error("Render failed:", error);
+  }
+  applyMobileNumericKeyboards(document.getElementById(viewId) || document);
+}
+
+function scheduleViewRender(viewId = activeViewId(), options = {}) {
+  if (!options.force && isViewFresh(viewId)) {
+    applyMobileNumericKeyboards(document.getElementById(viewId) || document);
+    return;
+  }
+  if (pendingViewRenderHandle !== null) {
+    window.cancelAnimationFrame(pendingViewRenderHandle);
+  }
+  pendingViewRenderHandle = window.requestAnimationFrame(() => {
+    pendingViewRenderHandle = null;
+    renderView(viewId, options);
+  });
+}
+
+function renderAll() {
+  invalidateRenderCache();
+  renderView(activeViewId(), { force: true });
 }
 
 let idleRenderHandle = null;
@@ -8782,43 +9005,21 @@ function scheduleIdleRender(callback, timeout = 1200) {
 function renderAfterTradeSave() {
   renderRecords();
   applyMobileNumericKeyboards();
-  scheduleIdleRender(() => {
-    renderDashboard();
-    renderPositions();
-    applyMobileNumericKeyboards();
-  });
 }
 
 function renderAfterCashTransferSave() {
   renderCashTransfers();
-  renderRecords();
   applyMobileNumericKeyboards();
-  scheduleIdleRender(() => {
-    renderDashboard();
-    renderPositions();
-    renderPerformanceSummary();
-    applyMobileNumericKeyboards();
-  });
 }
 
 function renderAfterQuoteUpdate() {
   renderPositions();
   applyMobileNumericKeyboards();
-  scheduleIdleRender(() => {
-    renderDashboard();
-    renderPerformanceSummary();
-    applyMobileNumericKeyboards();
-  });
 }
 
 function renderAfterCloseSnapshotChange(snapshot = null) {
   renderCloseSnapshots(snapshot);
   applyMobileNumericKeyboards();
-  scheduleIdleRender(() => {
-    renderDashboard();
-    renderEquityCurve();
-    applyMobileNumericKeyboards();
-  });
 }
 
 function editTrade(id) {
@@ -9685,7 +9886,7 @@ function closeSnapshotBaselinePayload(date) {
 }
 
 function fillCurrentAssetFromPortfolio() {
-  const portfolio = calculatePortfolio();
+  const portfolio = currentPortfolioSnapshot();
   const holdings = portfolio.positions
     .filter((position) => Number(position.quantity) > 0)
     .map((position) => normalizeRebuildHolding({
@@ -9818,7 +10019,7 @@ function hasAmountInput(input) {
 }
 
 function portfolioRebuildHoldings() {
-  return calculatePortfolio().positions
+  return currentPortfolioSnapshot().positions
     .filter((position) => position.quantity > 0)
     .map((position) => normalizeRebuildHolding({
       id: `portfolio-${position.symbol}`,
@@ -10090,8 +10291,20 @@ document.addEventListener("focusin", (event) => {
 function openModal(id) {
   const modal = document.getElementById(id);
   if (!modal) return;
+  if (id === "closed-rank-modal") resetClosedPositionQuery();
   modal.hidden = false;
   document.body.classList.add("modal-open");
+  const lazyRenderers = {
+    "asset-chart-modal": renderEquityCurve,
+    "annual-calendar-modal": () => renderAnnualCalendar(currentSnapshotCalendarRows()),
+    "allocation-modal": () => renderAllocation(),
+    "range-modal": renderRangeSummary,
+    "match-range-modal": renderMatchRangeQuery,
+    "pair-modal": renderTradePairPnL,
+    "dividend-modal": renderDividendDetails,
+  };
+  const render = lazyRenderers[id];
+  if (render) window.requestAnimationFrame(render);
 }
 
 function closeModal(modal) {
@@ -10231,21 +10444,28 @@ document.querySelector("#import-data").addEventListener("change", (event) => {
 });
 els.undoLastImport.addEventListener("click", undoLastImport);
 
-els.recordFilter.addEventListener("input", renderRecords);
+els.queryRecords.addEventListener("click", renderRecords);
+els.resetRecordQuery.addEventListener("click", resetRecordQuery);
+els.recordFilter.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    renderRecords();
+  }
+});
 els.assetChartStart.addEventListener("change", renderEquityCurve);
 els.assetChartEnd.addEventListener("change", renderEquityCurve);
 els.assetChartWindow.addEventListener("input", renderEquityCurve);
 els.assetChartLast60.addEventListener("click", () => { els.assetChartWindow.value = "60"; renderEquityCurve(); });
 els.assetChartLast120.addEventListener("click", () => { els.assetChartWindow.value = "120"; renderEquityCurve(); });
 els.assetChartReset.addEventListener("click", () => { els.assetChartStart.value = ""; els.assetChartEnd.value = ""; els.assetChartWindow.value = "0"; renderEquityCurve(); });
-els.calendarMonth.addEventListener("change", renderEquityCurve);
-els.calendarPrevMonth.addEventListener("click", () => setCalendarMonth(els.calendarMonth, shiftMonthKey(els.calendarMonth.value, -1), renderEquityCurve));
-els.calendarCurrentMonth.addEventListener("click", () => setCalendarMonth(els.calendarMonth, currentMonthKey(), renderEquityCurve));
-els.calendarNextMonth.addEventListener("click", () => setCalendarMonth(els.calendarMonth, shiftMonthKey(els.calendarMonth.value, 1), renderEquityCurve));
-els.calendarYear.addEventListener("change", renderEquityCurve);
-els.calendarPrevYear.addEventListener("click", () => { els.calendarYear.value = String((Number(els.calendarYear.value) || new Date().getFullYear()) - 1); renderEquityCurve(); });
-els.calendarCurrentYear.addEventListener("click", () => { els.calendarYear.value = String(new Date().getFullYear()); renderEquityCurve(); });
-els.calendarNextYear.addEventListener("click", () => { els.calendarYear.value = String((Number(els.calendarYear.value) || new Date().getFullYear()) + 1); renderEquityCurve(); });
+els.calendarMonth.addEventListener("change", renderDashboardCalendar);
+els.calendarPrevMonth.addEventListener("click", () => setCalendarMonth(els.calendarMonth, shiftMonthKey(els.calendarMonth.value, -1), renderDashboardCalendar));
+els.calendarCurrentMonth.addEventListener("click", () => setCalendarMonth(els.calendarMonth, currentMonthKey(), renderDashboardCalendar));
+els.calendarNextMonth.addEventListener("click", () => setCalendarMonth(els.calendarMonth, shiftMonthKey(els.calendarMonth.value, 1), renderDashboardCalendar));
+els.calendarYear.addEventListener("change", () => renderAnnualCalendar(currentSnapshotCalendarRows()));
+els.calendarPrevYear.addEventListener("click", () => { els.calendarYear.value = String((Number(els.calendarYear.value) || new Date().getFullYear()) - 1); renderAnnualCalendar(currentSnapshotCalendarRows()); });
+els.calendarCurrentYear.addEventListener("click", () => { els.calendarYear.value = String(new Date().getFullYear()); renderAnnualCalendar(currentSnapshotCalendarRows()); });
+els.calendarNextYear.addEventListener("click", () => { els.calendarYear.value = String((Number(els.calendarYear.value) || new Date().getFullYear()) + 1); renderAnnualCalendar(currentSnapshotCalendarRows()); });
 els.closeSnapshotDate.addEventListener("change", renderCloseSnapshots);
 els.closeSnapshotStartDate.addEventListener("input", scheduleRenderCloseSnapshots);
 els.closeSnapshotEndDate.addEventListener("input", scheduleRenderCloseSnapshots);
@@ -10353,24 +10573,6 @@ els.recordsCards.addEventListener("click", (event) => {
   }
 });
 
-els.positionsBody.addEventListener("input", (event) => {
-  const symbol = event.target.dataset.priceSymbol;
-  if (!symbol) return;
-  state.prices[symbol] = event.target.value;
-  save();
-  renderDashboard();
-  renderPerformanceSummary();
-});
-
-els.positionsCards.addEventListener("input", (event) => {
-  const symbol = event.target.dataset.priceSymbol;
-  if (!symbol) return;
-  state.prices[symbol] = event.target.value;
-  save();
-  renderDashboard();
-  renderPerformanceSummary();
-});
-
 els.positionsBody.addEventListener("click", (event) => {
   const symbol = event.target.dataset.detailSymbol;
   if (symbol) openStockDetail(symbol);
@@ -10381,16 +10583,18 @@ els.positionsCards.addEventListener("click", (event) => {
   if (symbol) openStockDetail(symbol);
 });
 
-els.closedPositionsBody.addEventListener("click", (event) => {
-  const symbol = event.target.dataset.detailSymbol;
-  if (symbol) openStockDetail(symbol);
-});
-
 els.closedRankList.addEventListener("click", (event) => {
   const symbol = event.target.dataset.detailSymbol;
   if (symbol) {
     closeModal(document.getElementById("closed-rank-modal"));
     openStockDetail(symbol);
+  }
+});
+els.queryClosedPositions.addEventListener("click", queryClosedPositions);
+els.closedQueryKeyword.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    queryClosedPositions();
   }
 });
 if (els.closedPairCards) {
@@ -10403,17 +10607,20 @@ if (els.closedPairCards) {
     }
   });
 }
-els.closedPositionsCards.addEventListener("click", (event) => {
-  const symbol = event.target.dataset.detailSymbol;
-  if (symbol) openStockDetail(symbol);
-});
-
 els.positionsBody.addEventListener("change", (event) => {
-  if (event.target.dataset.priceSymbol) renderPositions();
+  const symbol = event.target.dataset.priceSymbol;
+  if (!symbol) return;
+  state.prices[symbol] = event.target.value;
+  save();
+  renderPositions();
 });
 
 els.positionsCards.addEventListener("change", (event) => {
-  if (event.target.dataset.priceSymbol) renderPositions();
+  const symbol = event.target.dataset.priceSymbol;
+  if (!symbol) return;
+  state.prices[symbol] = event.target.value;
+  save();
+  renderPositions();
 });
 
 els.initialPositionsBody.addEventListener("click", (event) => {
