@@ -905,6 +905,30 @@ body.modal-open {
   line-height: 1.45;
 }
 
+.timeline-item.match-timeline-item {
+  grid-template-columns: 92px 1fr;
+}
+
+.match-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.match-detail-grid span {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+.match-detail-grid strong {
+  display: block;
+  margin-top: 3px;
+  font-size: 13px;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
 .inline-detail,
 .history-disclosure {
   border: 1px solid var(--line);
@@ -1580,6 +1604,10 @@ td {
     padding: 10px;
   }
 
+  .timeline-item.match-timeline-item {
+    grid-template-columns: 1fr;
+  }
+
   .timeline-list {
     gap: 8px;
   }
@@ -1647,6 +1675,10 @@ td {
   .month-switcher {
     width: 100%;
     gap: 6px;
+  }
+
+  .date-filter .month-switcher .ghost-button {
+    grid-column: auto;
   }
 
   .month-switcher .ghost-button.small {
@@ -3183,7 +3215,7 @@ body {
             <div class="modal-head">
               <div>
                 <h3>各股匹配盈亏</h3>
-                <span>主规则为最近反向匹配，右侧保留盈利优先对照</span>
+                <span>按最近反方向交易匹配，盈亏以匹配完成日期为准</span>
               </div>
               <button class="icon-action" type="button" data-modal-close>关闭</button>
             </div>
@@ -3210,9 +3242,6 @@ body {
                     <th>最近已匹配</th>
                     <th>未匹配数量</th>
                     <th>匹配实现盈亏</th>
-                    <th>盈利优先已匹配</th>
-                    <th>盈利优先未匹配</th>
-                    <th>盈利优先盈利</th>
                   </tr>
                 </thead>
                 <tbody id="trade-pair-pnl-body"></tbody>
@@ -3239,8 +3268,8 @@ body {
           <div class="modal-card">
             <div class="modal-head">
               <div>
-                <h3>分红明细</h3>
-                <span>逐笔记录个股税前分红金额与分红日期</span>
+                <h3 id="dividend-modal-title">分红明细</h3>
+                <span id="dividend-modal-subtitle">逐笔记录个股税前分红金额与分红日期</span>
               </div>
               <button class="icon-action" type="button" data-modal-close>关闭</button>
             </div>
@@ -3253,6 +3282,7 @@ body {
                     <th>代码</th>
                     <th>分红日期</th>
                     <th>税前分红</th>
+                    <th>股息率</th>
                     <th>备注</th>
                   </tr>
                 </thead>
@@ -4150,6 +4180,10 @@ body {
                 <input type="number" id="action-net" readonly />
               </label>
               <label>
+                股息率
+                <input type="text" id="action-yield" readonly placeholder="自动计算" />
+              </label>
+              <label>
                 备注
                 <input type="text" id="action-note" placeholder="例如 10派3、10送2" />
               </label>
@@ -4169,6 +4203,7 @@ body {
                     <th>金额/数量</th>
                     <th>分红税</th>
                     <th>净分红</th>
+                    <th>股息率</th>
                     <th>备注</th>
                     <th>操作</th>
                   </tr>
@@ -4406,6 +4441,8 @@ const els = {
   matchedRealized: optionalElement("#metric-matched-realized"),
   totalFees: optionalElement("#metric-total-fees"),
   dividends: optionalElement("#metric-dividends"),
+  dividendModalTitle: optionalElement("#dividend-modal-title"),
+  dividendModalSubtitle: optionalElement("#dividend-modal-subtitle"),
   dividendSummary: optionalElement("#dividend-summary"),
   dividendDetailBody: optionalElement("#dividend-detail-body"),
   dividendDetailCards: optionalElement("#dividend-detail-cards"),
@@ -4495,6 +4532,7 @@ const els = {
   actionValue: optionalElement("#action-value"),
   actionTax: optionalElement("#action-tax"),
   actionNet: optionalElement("#action-net"),
+  actionYield: optionalElement("#action-yield"),
   actionNote: optionalElement("#action-note"),
   corporateActionsBody: optionalElement("#corporate-actions-body"),
   corporateActionsCards: optionalElement("#corporate-actions-cards"),
@@ -4937,6 +4975,60 @@ function dividendTotal(asOfDate = "") {
 function dividendNet(action) {
   if (!action || action.type !== "dividend") return 0;
   return (Number(action.value) || 0) - (Number(action.tax) || 0);
+}
+
+function positionQuantityOnDate(symbol, date) {
+  const key = normalizeSymbol(symbol);
+  if (!key || !validDateString(date)) return 0;
+  let quantity = 0;
+
+  state.initialPositions.forEach((position) => {
+    if (normalizeSymbol(position.symbol) === key) quantity += Number(position.quantity) || 0;
+  });
+
+  state.trades.forEach((trade) => {
+    if (normalizeSymbol(trade.symbol) !== key || !trade.date || trade.date > date) return;
+    const value = Number(trade.quantity) || 0;
+    quantity += trade.side === "sell" ? -value : value;
+  });
+
+  state.corporateActions.forEach((action) => {
+    if (action.type !== "bonus" || normalizeSymbol(action.symbol) !== key || !action.date || action.date > date) return;
+    quantity += Number(action.value) || 0;
+  });
+
+  return quantity;
+}
+
+function dividendMarketValue(action) {
+  if (!action || action.type !== "dividend") return 0;
+  const key = normalizeSymbol(action.symbol);
+  const date = action.date;
+  if (!key || !validDateString(date)) return 0;
+
+  const exactSnapshot = state.closeSnapshots.find((snapshot) => snapshot.date === date);
+  const exactPosition = exactSnapshot
+    ? (exactSnapshot.positions || []).find((position) => normalizeSymbol(position.symbol) === key)
+    : null;
+  const exactMarketValue = Number(exactPosition?.marketValue) || 0;
+  if (exactMarketValue > 0) return exactMarketValue;
+
+  const quantity = positionQuantityOnDate(key, date);
+  if (quantity <= 0) return 0;
+  const snapshotPrice = historicalCloseFromSnapshots(key, date);
+  const price = Number(snapshotPrice?.price) || 0;
+  return price > 0 ? quantity * price : 0;
+}
+
+function dividendYieldRate(action) {
+  if (!action || action.type !== "dividend") return 0;
+  const marketValue = dividendMarketValue(action);
+  return marketValue > 0 ? ((Number(action.value) || 0) / marketValue) * 100 : 0;
+}
+
+function formatDividendYield(action) {
+  const rate = Number(action.dividendYield) || dividendYieldRate(action);
+  return rate > 0 ? `${number(rate, 2)}%` : "-";
 }
 
 function applyOriginalCostAdjustments(books) {
@@ -5401,35 +5493,6 @@ function tradePairRowsForPeriod(startDate = "", endDate = "") {
   if (!hasDateQuery(startDate, endDate)) return calculateTradePairPnL();
   const range = dateRangeBounds(startDate, endDate);
   return calculateTradePairPnL()
-    .map((row) => {
-      const matchDetails = (row.matchDetails || []).filter((match) => dateInRange(matchCompletionDate(match), range.startDate, range.endDate));
-      if (!matchDetails.length) return null;
-      const matchedQuantity = matchDetails.reduce((sum, match) => sum + match.quantity, 0);
-      const buyCost = matchDetails.reduce((sum, match) => sum + match.buyCost, 0);
-      const sellIncome = matchDetails.reduce((sum, match) => sum + match.sellIncome, 0);
-      const pnl = sellIncome - buyCost;
-      return {
-        ...row,
-        matchedQuantity,
-        buyCost,
-        sellIncome,
-        pnl,
-        matchDetails,
-        unmatchedBuyQuantity: 0,
-        unmatchedSellQuantity: 0,
-        unmatchedQuantity: 0,
-        unmatchedDetails: [],
-        averageBuy: matchedQuantity > 0 ? buyCost / matchedQuantity : 0,
-        averageSell: matchedQuantity > 0 ? sellIncome / matchedQuantity : 0,
-      };
-    })
-    .filter(Boolean);
-}
-
-function profitFirstRowsForPeriod(startDate = "", endDate = "") {
-  if (!hasDateQuery(startDate, endDate)) return calculateProfitFirstTradePairPnL();
-  const range = dateRangeBounds(startDate, endDate);
-  return calculateProfitFirstTradePairPnL()
     .map((row) => {
       const matchDetails = (row.matchDetails || []).filter((match) => dateInRange(matchCompletionDate(match), range.startDate, range.endDate));
       if (!matchDetails.length) return null;
@@ -6139,135 +6202,6 @@ function calculateTradePairPnL(startDate = "", endDate = "", sourceTrades = stat
     .filter((book) => book.matchedQuantity > 0 || book.unmatchedBuyQuantity > 0 || book.unmatchedSellQuantity > 0);
 }
 
-function calculateProfitFirstTradePairPnL(startDate = "", endDate = "", sourceTrades = state.trades) {
-  const books = new Map();
-  const stageTrades = sortedTrades(sourceTrades).filter((trade) => {
-    if (startDate && trade.date < startDate) return false;
-    if (endDate && trade.date > endDate) return false;
-    return true;
-  });
-
-  for (const trade of stageTrades) {
-    const key = normalizeSymbol(trade.symbol);
-    const book = books.get(key) || {
-      symbol: key,
-      name: trade.name,
-      buyLots: [],
-      sellLots: [],
-      matchedQuantity: 0,
-      buyCost: 0,
-      sellIncome: 0,
-      pnl: 0,
-      matchDetails: [],
-    };
-    const amount = tradeAmount(trade);
-    const fee = totalFee(trade);
-    const netAmount = trade.side === "sell" ? amount - fee : amount + fee;
-    const unitNet = trade.quantity > 0 ? netAmount / trade.quantity : 0;
-
-    book.name = trade.name || book.name;
-
-    if (trade.side === "buy") {
-      let remaining = trade.quantity;
-
-      while (remaining > 0 && book.sellLots.length) {
-        const lot = book.sellLots[book.sellLots.length - 1];
-        const used = Math.min(remaining, lot.quantity);
-        const buyCost = used * unitNet;
-        const sellIncome = used * lot.unitIncome;
-        const pnl = sellIncome - buyCost;
-        if (pnl <= 0.000001) break;
-        book.matchedQuantity += used;
-        book.buyCost += buyCost;
-        book.sellIncome += sellIncome;
-        book.pnl += pnl;
-        book.matchDetails.push({
-          quantity: used,
-          buyDate: trade.date,
-          buyPrice: trade.price,
-          sellDate: lot.date,
-          sellPrice: lot.price,
-          buyCost,
-          sellIncome,
-          pnl,
-        });
-        lot.quantity -= used;
-        remaining -= used;
-        if (lot.quantity <= 0.000001) book.sellLots.pop();
-      }
-
-      if (remaining > 0) {
-        book.buyLots.push({
-          quantity: remaining,
-          unitCost: unitNet,
-          price: trade.price,
-          date: trade.date,
-        });
-      }
-    } else {
-      let remaining = trade.quantity;
-
-      while (remaining > 0 && book.buyLots.length) {
-        const lot = book.buyLots[book.buyLots.length - 1];
-        const used = Math.min(remaining, lot.quantity);
-        const buyCost = used * lot.unitCost;
-        const sellIncome = used * unitNet;
-        const pnl = sellIncome - buyCost;
-        if (pnl <= 0.000001) break;
-        book.matchedQuantity += used;
-        book.buyCost += buyCost;
-        book.sellIncome += sellIncome;
-        book.pnl += pnl;
-        book.matchDetails.push({
-          quantity: used,
-          buyDate: lot.date,
-          buyPrice: lot.price,
-          sellDate: trade.date,
-          sellPrice: trade.price,
-          buyCost,
-          sellIncome,
-          pnl,
-        });
-        lot.quantity -= used;
-        remaining -= used;
-        if (lot.quantity <= 0.000001) book.buyLots.pop();
-      }
-
-      if (remaining > 0) {
-        book.sellLots.push({
-          quantity: remaining,
-          unitIncome: unitNet,
-          price: trade.price,
-          date: trade.date,
-        });
-      }
-    }
-
-    books.set(key, book);
-  }
-
-  return [...books.values()]
-    .map((book) => {
-      const unmatchedBuyQuantity = book.buyLots.reduce((sum, lot) => sum + lot.quantity, 0);
-      const unmatchedSellQuantity = book.sellLots.reduce((sum, lot) => sum + lot.quantity, 0);
-      const unmatchedQuantity = unmatchedBuyQuantity - unmatchedSellQuantity;
-      const unmatchedDetails = [
-        ...book.buyLots.map((lot, index) => ({ quantity: lot.quantity, price: lot.price || lot.unitCost, date: lot.date, priority: index })),
-        ...book.sellLots.map((lot, index) => ({ quantity: -lot.quantity, price: lot.price || lot.unitIncome, date: lot.date, priority: index })),
-      ];
-      return {
-        ...book,
-        unmatchedBuyQuantity,
-        unmatchedSellQuantity,
-        unmatchedQuantity,
-        unmatchedDetails,
-        averageBuy: book.matchedQuantity > 0 ? book.buyCost / book.matchedQuantity : 0,
-        averageSell: book.matchedQuantity > 0 ? book.sellIncome / book.matchedQuantity : 0,
-      };
-    })
-    .filter((book) => book.matchedQuantity > 0 || book.unmatchedBuyQuantity > 0 || book.unmatchedSellQuantity > 0);
-}
-
 function calculateActiveTradePairPnL(startDate = "", endDate = "", sourceTrades = state.trades) {
   return calculateTradePairPnL(startDate, endDate, sourceTrades);
 }
@@ -6565,29 +6499,44 @@ function stockDividendTotal(symbol) {
     .reduce((sum, action) => sum + dividendNet(action), 0);
 }
 
-function dividendDetailRows() {
+function dividendDetailRows(symbol = "") {
+  const key = normalizeSymbol(symbol);
   return state.corporateActions
     .filter((action) => action.type === "dividend")
-    .map((action) => ({
-      id: action.id,
-      date: action.date || "",
-      symbol: normalizeSymbol(action.symbol),
-      name: action.name || normalizeSymbol(action.symbol),
-      gross: Number(action.value) || 0,
-      note: action.note || "",
-    }))
+    .filter((action) => !key || normalizeSymbol(action.symbol) === key)
+    .map((action) => {
+      const gross = Number(action.value) || 0;
+      const yieldRate = Number(action.dividendYield) || dividendYieldRate(action);
+      const marketValue = dividendMarketValue(action) || (yieldRate > 0 ? gross / (yieldRate / 100) : 0);
+      return {
+        id: action.id,
+        date: action.date || "",
+        symbol: normalizeSymbol(action.symbol),
+        name: action.name || normalizeSymbol(action.symbol),
+        gross,
+        yieldRate,
+        marketValue,
+        note: action.note || "",
+      };
+    })
     .filter((row) => row.symbol)
     .sort((a, b) => (b.date || "").localeCompare(a.date || "") || b.gross - a.gross || a.symbol.localeCompare(b.symbol));
 }
 
-function renderDividendDetails() {
+function renderDividendDetails(symbol = "") {
   if (!els.dividendSummary || !els.dividendDetailBody || !els.dividendDetailCards) return;
-  const rows = dividendDetailRows();
+  const key = normalizeSymbol(symbol);
+  const rows = dividendDetailRows(key);
   const total = rows.reduce((sum, row) => sum + row.gross, 0);
+  const totalMarketValue = rows.reduce((sum, row) => sum + (Number(row.marketValue) || 0), 0);
+  const totalYieldRate = totalMarketValue > 0 ? (total / totalMarketValue) * 100 : 0;
   const stockCount = new Set(rows.map((row) => row.symbol)).size;
+  if (els.dividendModalTitle) els.dividendModalTitle.textContent = key ? `${rows[0]?.name || key} 分红明细` : "分红明细";
+  if (els.dividendModalSubtitle) els.dividendModalSubtitle.textContent = key ? "当前个股逐笔分红、股息率与备注" : "逐笔记录个股税前分红金额与分红日期";
 
   els.dividendSummary.innerHTML = [
     { label: "税前分红", value: money(total), tone: classByValue(total) },
+    { label: "综合股息率", value: totalYieldRate > 0 ? `${number(totalYieldRate, 2)}%` : "-", tone: classByValue(totalYieldRate) },
     { label: "分红股票数", value: number(stockCount, 0), tone: "" },
     { label: "分红记录数", value: number(rows.length, 0), tone: "" },
   ]
@@ -6595,7 +6544,7 @@ function renderDividendDetails() {
     .join("");
 
   if (!rows.length) {
-    els.dividendDetailBody.innerHTML = `<tr><td colspan="5" class="empty-state">暂无现金分红记录</td></tr>`;
+    els.dividendDetailBody.innerHTML = `<tr><td colspan="6" class="empty-state">暂无现金分红记录</td></tr>`;
     els.dividendDetailCards.innerHTML = `<div class="empty-state">暂无现金分红记录</div>`;
     return;
   }
@@ -6608,6 +6557,7 @@ function renderDividendDetails() {
           <td>${row.symbol}</td>
           <td>${row.date || "-"}</td>
           <td>${money(row.gross)}</td>
+          <td>${row.yieldRate > 0 ? `${number(row.yieldRate, 2)}%` : "-"}</td>
           <td>${row.note || "-"}</td>
         </tr>
       `,
@@ -6625,6 +6575,7 @@ function renderDividendDetails() {
           <dl>
             <div><dt>分红日期</dt><dd>${row.date || "-"}</dd></div>
             <div><dt>税前分红</dt><dd class="${classByValue(row.gross)}">${money(row.gross)}</dd></div>
+            <div><dt>股息率</dt><dd>${row.yieldRate > 0 ? `${number(row.yieldRate, 2)}%` : "-"}</dd></div>
             <div><dt>备注</dt><dd>${row.note || "-"}</dd></div>
           </dl>
         </article>
@@ -7121,15 +7072,44 @@ function renderDailyMatchDetails(date) {
       pnl: 0,
       quantity: 0,
       count: 0,
+      details: [],
     };
     row.pnl += Number(match.pnl) || 0;
     row.quantity += Number(match.quantity) || 0;
     row.count += 1;
+    row.details.push(match);
     bySymbol.set(symbol, row);
   });
   const rows = [...bySymbol.values()].sort((a, b) => b.pnl - a.pnl || a.symbol.localeCompare(b.symbol));
   const totalPnl = rows.reduce((sum, row) => sum + row.pnl, 0);
   const totalQuantity = rows.reduce((sum, row) => sum + row.quantity, 0);
+  const renderDailyMatchItem = (match) => {
+    const buyPrice = Number(match.buyPrice) || 0;
+    const sellPrice = Number(match.sellPrice) || 0;
+    const quantity = Number(match.quantity) || 0;
+    const pnl = Number(match.pnl) || 0;
+    const buyAmount = buyPrice * quantity;
+    const sellAmount = sellPrice * quantity;
+    const dealAmount = (buyAmount + sellAmount) / 2;
+    const fee = Math.max(0, sellAmount - buyAmount - pnl);
+    return `
+      <article class="timeline-item match-timeline-item">
+        <div>
+          <strong class="${classByValue(pnl)}">${money(pnl)}</strong>
+        </div>
+        <div class="match-detail-grid">
+          <div><span>卖出日期</span><strong>${escapeHtml(match.sellDate || "-")}</strong></div>
+          <div><span>卖价</span><strong>¥${number(sellPrice, 2)}</strong></div>
+          <div><span>买入日期</span><strong>${escapeHtml(match.buyDate || "-")}</strong></div>
+          <div><span>买价</span><strong>¥${number(buyPrice, 2)}</strong></div>
+          <div><span>股数</span><strong>${number(quantity, 0)}</strong></div>
+          <div><span>成交金额</span><strong>${money(dealAmount)}</strong></div>
+          <div><span>费用</span><strong>${money(fee)}</strong></div>
+          <div><span>盈亏</span><strong class="${classByValue(pnl)}">${money(pnl)}</strong></div>
+        </div>
+      </article>
+    `;
+  };
   els.dailyMatchTitle.textContent = `${date} 匹配盈亏`;
   els.dailyMatchSummary.innerHTML = [
     { label: "匹配总盈亏", value: money(totalPnl), tone: classByValue(totalPnl) },
@@ -7154,6 +7134,12 @@ function renderDailyMatchDetails(date) {
             <div><dt>匹配股数</dt><dd>${number(row.quantity, 0)}</dd></div>
             <div><dt>匹配笔数</dt><dd>${row.count}</dd></div>
           </dl>
+          <div class="timeline-list spacing-top">
+            ${(row.details || [])
+              .sort((a, b) => Math.abs(Number(b.pnl) || 0) - Math.abs(Number(a.pnl) || 0))
+              .map(renderDailyMatchItem)
+              .join("")}
+          </div>
         </article>
       `).join("")
     : `<div class="empty-state">这一天没有匹配明细</div>`;
@@ -7500,6 +7486,7 @@ function renderAutoCloseSummary(summary = {}) {
 }
 
 let closeSnapshotRenderTimer = null;
+let dividendModalSymbolFilter = "";
 function scheduleRenderCloseSnapshots() {
   window.clearTimeout(closeSnapshotRenderTimer);
   closeSnapshotRenderTimer = window.setTimeout(renderCloseSnapshots, 180);
@@ -8264,22 +8251,17 @@ function emptyPairRow(symbol = "", name = "") {
 }
 
 function renderTradePairRow(row) {
-  const profit = row.profitFirst || emptyPairRow(row.symbol, row.name);
   return `
     <tr>
       <td><span class="stock-name-chip">${row.name}</span></td>
       <td>${number(row.matchedQuantity, 0)}</td>
       <td class="${classByValue(row.unmatchedQuantity)}">${number(row.unmatchedQuantity, 0)} ${renderUnmatchedAverage(row)}${renderUnmatchedDetail(row)}</td>
       <td class="${classByValue(row.pnl)}">${money(row.pnl)}</td>
-      <td>${number(profit.matchedQuantity, 0)}</td>
-      <td class="${classByValue(profit.unmatchedQuantity)}">${number(profit.unmatchedQuantity, 0)} ${renderUnmatchedAverage(profit)}${renderUnmatchedDetail(profit)}</td>
-      <td class="${classByValue(profit.pnl)}">${money(profit.pnl)}</td>
     </tr>
   `;
 }
 
 function renderTradePairCard(row, withDetailButton = false) {
-  const profit = row.profitFirst || emptyPairRow(row.symbol, row.name);
   return `
     <article class="mobile-card">
       <div class="mobile-card-head">
@@ -8290,9 +8272,6 @@ function renderTradePairCard(row, withDetailButton = false) {
         <div><dt>已匹配数量</dt><dd>${number(row.matchedQuantity, 0)}</dd></div>
         <div><dt>匹配实现盈亏</dt><dd class="${classByValue(row.pnl)}">${money(row.pnl)}</dd></div>
         <div class="unmatched-row"><dt>未匹配数量</dt><dd class="${classByValue(row.unmatchedQuantity)}">${number(row.unmatchedQuantity, 0)} ${renderUnmatchedAverage(row)}${renderUnmatchedDetail(row)}</dd></div>
-        <div><dt>盈利优先已匹配</dt><dd>${number(profit.matchedQuantity, 0)}</dd></div>
-        <div><dt>盈利优先盈利</dt><dd class="${classByValue(profit.pnl)}">${money(profit.pnl)}</dd></div>
-        <div class="unmatched-row"><dt>盈利优先未匹配</dt><dd class="${classByValue(profit.unmatchedQuantity)}">${number(profit.unmatchedQuantity, 0)} ${renderUnmatchedAverage(profit)}${renderUnmatchedDetail(profit)}</dd></div>
       </dl>
       ${withDetailButton ? `<div class="row-actions"><button class="icon-action" data-detail-symbol="${row.symbol}">详情</button></div>` : ""}
     </article>
@@ -8346,17 +8325,14 @@ function renderMatchRangeQuery() {
     : `<div class="empty-state">这个阶段没有匹配盈亏</div>`;
 }
 function renderTradePairPnL() {
-  const profitRows = profitFirstRowsForPeriod(els.pairStartDate.value, els.pairEndDate.value);
-  const profitMap = new Map(profitRows.map((row) => [row.symbol, row]));
   const rows = tradePairRowsForPeriod(els.pairStartDate.value, els.pairEndDate.value)
-    .map((row) => ({ ...row, profitFirst: profitMap.get(row.symbol) || emptyPairRow(row.symbol, row.name) }))
     .sort((a, b) => b.pnl - a.pnl);
   const currentSymbols = new Set(currentPortfolioSnapshot().positions.filter((position) => position.quantity > 0).map((position) => position.symbol));
   const currentRows = rows.filter((row) => currentSymbols.has(row.symbol));
   const closedRows = rows.filter((row) => !currentSymbols.has(row.symbol)).sort((a, b) => b.pnl - a.pnl || a.symbol.localeCompare(b.symbol));
 
   if (!rows.length) {
-    els.tradePairPnlBody.innerHTML = `<tr><td colspan="7" class="empty-state">暂无可匹配的买卖记录。原来持仓不参与匹配。</td></tr>`;
+    els.tradePairPnlBody.innerHTML = `<tr><td colspan="4" class="empty-state">暂无可匹配的买卖记录。原来持仓不参与匹配。</td></tr>`;
     els.tradePairPnlCards.innerHTML = `<div class="empty-state">暂无可匹配的买卖记录。原来持仓不参与匹配。</div>`;
     if (els.closedPairCards) els.closedPairCards.innerHTML = `<div class="empty-state">暂无已清仓匹配记录</div>`;
     return;
@@ -8364,7 +8340,7 @@ function renderTradePairPnL() {
 
   els.tradePairPnlBody.innerHTML = currentRows.length
     ? currentRows.map(renderTradePairRow).join("")
-    : `<tr><td colspan="7" class="empty-state">当前持仓暂无匹配记录，已清仓股票请点“清仓股票”查看。</td></tr>`;
+    : `<tr><td colspan="4" class="empty-state">当前持仓暂无匹配记录，已清仓股票请点“清仓股票”查看。</td></tr>`;
 
   els.tradePairPnlCards.innerHTML = currentRows.length
     ? currentRows.map((row) => renderTradePairCard(row)).join("")
@@ -8652,9 +8628,11 @@ function renderReports() {
   const assets = portfolioTotals().assets;
   const monthMatchRate = assets > 0 ? (monthSummary.matched / assets) * 100 : 0;
   const yearMatchRate = assets > 0 ? (yearSummary.matched / assets) * 100 : 0;
+  const stockDividends = stockDividendTotal(selected);
   const cards = [
     { label: "本月当日盈亏合计", value: money(monthSummary.totalPnl), tone: classByValue(monthSummary.totalPnl) },
     { label: "本月匹配实现", value: money(monthSummary.matched), tone: classByValue(monthSummary.matched) },
+    { label: "累计净分红", value: money(stockDividends), tone: classByValue(stockDividends), dividendSymbol: selected },
     { label: "本月成交额", value: money(monthSummary.turnover), tone: "" },
     { label: "本月匹配贡献率", value: `${number(monthMatchRate, 2)}%`, tone: classByValue(monthMatchRate) },
     { label: "本年当日盈亏合计", value: money(yearSummary.totalPnl), tone: classByValue(yearSummary.totalPnl) },
@@ -8668,6 +8646,7 @@ function renderReports() {
         <article class="metric">
           <span>${card.label}</span>
           <strong class="${card.tone}">${card.value}</strong>
+          ${card.dividendSymbol ? `<button class="icon-action metric-action" type="button" data-report-dividend-symbol="${card.dividendSymbol}">明细</button>` : ""}
         </article>
       `,
     )
@@ -8956,7 +8935,7 @@ function renderCorporateActions() {
   const rows = [...state.corporateActions].sort((a, b) => (b.date || "").localeCompare(a.date || ""));
 
   if (!rows.length) {
-    els.corporateActionsBody.innerHTML = `<tr><td colspan="9" class="empty-state">暂无分红或送股记录</td></tr>`;
+    els.corporateActionsBody.innerHTML = `<tr><td colspan="10" class="empty-state">暂无分红或送股记录</td></tr>`;
     els.corporateActionsCards.innerHTML = `<div class="empty-state">暂无分红或送股记录</div>`;
     return;
   }
@@ -8972,6 +8951,7 @@ function renderCorporateActions() {
           <td>${action.type === "dividend" ? money(action.value) : number(action.value, 0)}</td>
           <td>${action.type === "dividend" ? money(action.tax || 0) : "-"}</td>
           <td>${action.type === "dividend" ? money(dividendNet(action)) : "-"}</td>
+          <td>${action.type === "dividend" ? formatDividendYield(action) : "-"}</td>
           <td>${action.note || "-"}</td>
           <td>
             <button class="icon-action" data-edit-action="${action.id}">编辑</button>
@@ -8996,6 +8976,7 @@ function renderCorporateActions() {
             <div><dt>金额/数量</dt><dd>${action.type === "dividend" ? money(action.value) : number(action.value, 0)}</dd></div>
             <div><dt>分红税</dt><dd>${action.type === "dividend" ? money(action.tax || 0) : "-"}</dd></div>
             <div><dt>净分红</dt><dd>${action.type === "dividend" ? money(dividendNet(action)) : "-"}</dd></div>
+            <div><dt>股息率</dt><dd>${action.type === "dividend" ? formatDividendYield(action) : "-"}</dd></div>
             <div><dt>备注</dt><dd>${action.note || "-"}</dd></div>
           </dl>
           <div class="row-actions">
@@ -9015,6 +8996,16 @@ function updateCorporateActionNet() {
   els.actionTax.placeholder = isDividend ? "现金分红时填写" : "送股不需要填写";
   const net = isDividend ? (Number(els.actionValue.value) || 0) - (Number(els.actionTax.value) || 0) : 0;
   els.actionNet.value = net ? net.toFixed(2) : "";
+  if (els.actionYield) {
+    const draft = {
+      date: els.actionDate.value || today(),
+      symbol: normalizeSymbol(els.actionSymbol.value),
+      type: els.actionType.value,
+      value: Number(els.actionValue.value) || 0,
+    };
+    const rate = isDividend ? dividendYieldRate(draft) : 0;
+    els.actionYield.value = rate > 0 ? `${number(rate, 2)}%` : (isDividend && draft.value > 0 ? "缺少当日市值" : "");
+  }
 }
 
 function resetCorporateActionForm() {
@@ -9026,6 +9017,7 @@ function resetCorporateActionForm() {
   els.actionValue.value = "";
   els.actionTax.value = "";
   els.actionNet.value = "";
+  if (els.actionYield) els.actionYield.value = "";
   els.actionNote.value = "";
   document.querySelector("#add-corporate-action").textContent = "添加公司行为";
   updateCorporateActionNet();
@@ -9042,6 +9034,7 @@ function editCorporateAction(id) {
   els.actionType.value = action.type || "dividend";
   els.actionValue.value = Number(action.value) || "";
   els.actionTax.value = action.type === "dividend" ? Number(action.tax) || "" : "";
+  if (els.actionYield) els.actionYield.value = action.type === "dividend" ? formatDividendYield(action) : "";
   els.actionNote.value = action.note || "";
   document.querySelector("#add-corporate-action").textContent = "保存公司行为";
   updateCorporateActionNet();
@@ -9060,6 +9053,7 @@ function addCorporateAction() {
     tax: isDividend ? Number(els.actionTax.value) || 0 : 0,
     note: els.actionNote.value.trim(),
   };
+  action.dividendYield = isDividend ? dividendYieldRate(action) : 0;
 
   if (!action.symbol || !action.name || action.value <= 0) {
     alert("请填写代码、名称、金额或数量。");
@@ -9501,7 +9495,7 @@ function csvCell(value) {
 
 function exportCsv() {
   const rows = [
-    ["日期", "代码", "名称", "类型", "价格", "数量", "金额", "佣金", "印花税", "过户费", "总费用", "分红税", "净分红", "备注"],
+    ["日期", "代码", "名称", "类型", "价格", "数量", "金额", "佣金", "印花税", "过户费", "总费用", "分红税", "净分红", "股息率", "备注"],
     ...state.trades.map((trade) => {
       const fees = tradeFees(trade);
       const fee = fees.commission + fees.stampTax + fees.transferFee;
@@ -9517,6 +9511,7 @@ function exportCsv() {
         fees.stampTax,
         fees.transferFee,
         fee,
+        "",
         "",
         "",
         trade.note || "",
@@ -9536,6 +9531,7 @@ function exportCsv() {
       "",
       action.type === "dividend" ? Number(action.tax) || 0 : "",
       action.type === "dividend" ? dividendNet(action) : "",
+      action.type === "dividend" ? formatDividendYield(action) : "",
       action.note || "",
     ]),
     ...state.cashTransfers.map((item) => [
@@ -9546,6 +9542,7 @@ function exportCsv() {
       "",
       "",
       Number(item.amount) || 0,
+      "",
       "",
       "",
       "",
@@ -10235,7 +10232,7 @@ function historicalCloseFromSnapshots(symbol, date) {
   const key = normalizeSymbol(symbol);
   const exact = [...state.closeSnapshots].filter((snapshot) => validDateString(snapshot.date) && snapshot.date <= date).sort((a, b) => b.date.localeCompare(a.date)).find((snapshot) => (snapshot.positions || []).some((position) => normalizeSymbol(position.symbol) === key));
   const position = exact ? (exact.positions || []).find((item) => normalizeSymbol(item.symbol) === key) : null;
-  const price = Number(position?.currentPrice) || 0;
+  const price = Number(position?.currentPrice) || Number(position?.price) || 0;
   return price > 0 ? { price, source: `收盘记录 ${exact.date}` } : null;
 }
 
@@ -10517,7 +10514,7 @@ function openModal(id) {
     "range-modal": renderRangeSummary,
     "match-range-modal": renderMatchRangeQuery,
     "pair-modal": renderTradePairPnL,
-    "dividend-modal": renderDividendDetails,
+    "dividend-modal": () => renderDividendDetails(dividendModalSymbolFilter),
   };
   const render = lazyRenderers[id];
   if (render) window.requestAnimationFrame(render);
@@ -10530,7 +10527,10 @@ function closeModal(modal) {
 }
 
 document.querySelectorAll("[data-modal-open]").forEach((button) => {
-  button.addEventListener("click", () => openModal(button.dataset.modalOpen));
+  button.addEventListener("click", () => {
+    if (button.dataset.modalOpen === "dividend-modal") dividendModalSymbolFilter = "";
+    openModal(button.dataset.modalOpen);
+  });
 });
 
 document.querySelectorAll("[data-modal-close]").forEach((button) => {
@@ -10627,6 +10627,8 @@ optionalElement("#reset-cash-transfer").addEventListener("click", resetCashTrans
 optionalElement("#add-corporate-action").addEventListener("click", addCorporateAction);
 optionalElement("#reset-corporate-action").addEventListener("click", resetCorporateActionForm);
 els.actionType.addEventListener("change", updateCorporateActionNet);
+els.actionDate.addEventListener("change", updateCorporateActionNet);
+els.actionSymbol.addEventListener("input", updateCorporateActionNet);
 els.actionValue.addEventListener("input", updateCorporateActionNet);
 els.actionTax.addEventListener("input", updateCorporateActionNet);
 optionalElement("#clear-initial-positions").addEventListener("click", () => {
@@ -10734,6 +10736,12 @@ els.reportMonth.addEventListener("change", renderReports);
 els.reportPrevMonth.addEventListener("click", () => setCalendarMonth(els.reportMonth, shiftMonthKey(els.reportMonth.value, -1), renderReports));
 els.reportCurrentMonth.addEventListener("click", () => setCalendarMonth(els.reportMonth, currentMonthKey(), renderReports));
 els.reportNextMonth.addEventListener("click", () => setCalendarMonth(els.reportMonth, shiftMonthKey(els.reportMonth.value, 1), renderReports));
+els.reportSummaryMetrics.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-report-dividend-symbol]");
+  if (!button) return;
+  dividendModalSymbolFilter = button.dataset.reportDividendSymbol || "";
+  openModal("dividend-modal");
+});
 els.rangeStartDate.addEventListener("change", renderRangeSummary);
 els.rangeEndDate.addEventListener("change", renderRangeSummary);
 els.summaryKindButtons.forEach((button) => {
